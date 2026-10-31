@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/codec"
+require "solaredge/modbus/transport"
+
 module SolarEdge
     module Modbus
         # What every SolarEdge device shares: a connection, reading one

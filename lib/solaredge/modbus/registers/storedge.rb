@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/register"
+
 module SolarEdge
     module Modbus
         module Registers
@@ -21,7 +23,7 @@ module SolarEdge
                     storedge_remote_command_mode: [0xe00d, 1, :uint16, 1],
                     storedge_remote_charge_limit: [0xe00e, 2, :sefloat, 1],
                     storedge_remote_discharge_limit: [0xe010, 2, :sefloat, 1]
-                }.transform_values { Register.new(*it) }.freeze
+                }.transform_values { Register.row(*it) }.freeze
             end
         end
     end

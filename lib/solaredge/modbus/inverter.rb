@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/battery"
+require "solaredge/modbus/device"
+require "solaredge/modbus/meter"
+require "solaredge/modbus/registers/inverter"
+
 module SolarEdge
     module Modbus
         # A SolarEdge inverter, and the meters and batteries attached to

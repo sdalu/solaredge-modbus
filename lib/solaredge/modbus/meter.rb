@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/device"
+require "solaredge/modbus/numbered"
+require "solaredge/modbus/registers/meter"
+
 module SolarEdge
     module Modbus
         # One of an inverter's up to three meters (number 1 to 3). Built

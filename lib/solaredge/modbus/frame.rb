@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/transport"
+
 module SolarEdge
     module Modbus
         # Builds and checks the PDUs Transport exchanges (see
@@ -16,23 +18,23 @@ module SolarEdge
                     .pack("Cnn C n#{values.size}")
             end
 
+            # header: [transaction id, protocol, length, unit].
             def check_header(header, tid, unit, lengths)
-                r_tid, protocol, length, r_unit = header
-                raise Error, "solaredge: MBAP length #{length}" unless
-                    lengths.cover?(length)
-                return if [r_tid, protocol, r_unit] == [tid, 0, unit]
-                raise Error, "solaredge: reply #{r_tid}/#{protocol}/" \
-                             "#{r_unit} to request #{tid}/0/#{unit}"
+                raise Error, "solaredge: MBAP length #{header[2]}" unless
+                    lengths.cover?(header[2])
+                return if header in [^tid, 0, _, ^unit]
+                raise Error, "solaredge: reply #{header.values_at(0, 1, 3)
+                    .join("/")} to request #{tid}/0/#{unit}"
             end
 
             def registers(pdu, function, count)
                 check_function(pdu, function)
                 byte_count = pdu.getbyte(1)
-                unless byte_count == 2 * count && pdu.bytesize == 2 + byte_count
-                    raise Error, "solaredge: #{pdu.bytesize - 1} bytes " \
-                                 "for #{count} registers"
-                end
-                pdu.byteslice(2, byte_count).unpack("n*")
+                whole = byte_count == 2 * count &&
+                        pdu.bytesize == 2 + byte_count
+                return pdu.byteslice(2, byte_count).unpack("n*") if whole
+                raise Error, "solaredge: #{pdu.bytesize - 1} bytes for " \
+                             "#{count} registers"
             end
 
             def confirm_write(pdu, address, count)

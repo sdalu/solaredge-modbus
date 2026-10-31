@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/register"
+
 module SolarEdge
     module Modbus
         module Registers
@@ -35,7 +37,7 @@ module SolarEdge
                     status_internal: [0xe188, 2, :uint32, 2],
                     event_log: [0xe18a, 2, :uint16, 2],
                     event_log_internal: [0xe192, 2, :uint16, 2]
-                }.transform_values { Register.new(*it) }.freeze
+                }.transform_values { Register.row(*it) }.freeze
             end
         end
     end

@@ -13,6 +13,12 @@ module SolarEdge
         #            :float32, :sefloat, :int32 or :string (Codec).
         #   batch    Integer: registers sharing a batch are read in one
         #            Modbus request by Device#read_all.
-        Register = Data.define(:address, :length, :dtype, :batch)
+        Register = Data.define(:address, :length, :dtype, :batch) do
+            # A table row, [address, length, dtype, batch], named field
+            # by field so the tables never depend on the fields' order.
+            def self.row(address, length, dtype, batch)
+                new(address:, length:, dtype:, batch:)
+            end
+        end
     end
 end

@@ -85,8 +85,7 @@ module SolarEdge
             end
 
             def read_reply(tid, unit)
-                deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) +
-                           @timeout
+                deadline = now + @timeout
                 header = read_exact(7, deadline).unpack("nnnC")
                 Frame.check_header(header, tid, unit, LENGTHS)
                 read_exact(header[2] - 1, deadline)
@@ -99,10 +98,16 @@ module SolarEdge
                 buf
             end
 
+            def readable?(deadline)
+                left = deadline - now
+                left.positive? && !@socket.wait_readable(left).nil?
+            end
+
+            def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
             def read_some(count, deadline)
-                left = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
                 raise Error, "solaredge: read timed out" unless
-                    left.positive? && @socket.wait_readable(left)
+                    readable?(deadline)
                 chunk = @socket.read_nonblock(count, exception: false)
                 raise Error, "solaredge: connection closed" if chunk.nil?
                 chunk == :wait_readable ? "" : chunk

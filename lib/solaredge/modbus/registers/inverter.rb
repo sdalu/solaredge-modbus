@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/register"
+
 module SolarEdge
     module Modbus
         module Registers
@@ -74,7 +76,7 @@ module SolarEdge
                     rc_cmd_mode: [0xe00d, 1, :uint16, 6],
                     rc_charge_limit: [0xe00e, 2, :float32, 6],
                     rc_discharge_limit: [0xe010, 2, :float32, 6]
-                }.transform_values { Register.new(*it) }.freeze
+                }.transform_values { Register.row(*it) }.freeze
 
                 # The power-control and StorEdge settings registers put
                 # their low word first; the others do not.

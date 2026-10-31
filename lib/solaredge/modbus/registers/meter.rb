@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/register"
+
 module SolarEdge
     module Modbus
         module Registers
@@ -87,7 +89,7 @@ module SolarEdge
                     l2_export_energy_reactive_q4: [0x9d60, 2, :uint32, 3],
                     l3_export_energy_reactive_q4: [0x9d62, 2, :uint32, 3],
                     energy_reactive_scale: [0x9d64, 1, :scale, 3]
-                }.transform_values { Register.new(*it) }.freeze
+                }.transform_values { Register.row(*it) }.freeze
             end
         end
     end

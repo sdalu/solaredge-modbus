@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/device"
+require "solaredge/modbus/numbered"
+require "solaredge/modbus/registers/battery"
+
 module SolarEdge
     module Modbus
         # One of an inverter's up to two batteries (number 1 or 2), built

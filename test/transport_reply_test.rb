@@ -2,8 +2,8 @@
 
 require "socket"
 
-require "test_helper"
 require "support/loopback_device"
+require "test_helper"
 
 # Replies Transport must refuse, each from a loopback device on
 # 127.0.0.1 (never the network): late, cut short, stalled, for another

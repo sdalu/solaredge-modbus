@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/device"
+require "solaredge/modbus/registers/storedge"
+
 module SolarEdge
     module Modbus
         # An inverter's StorEdge (battery system) settings. Its 32-bit
