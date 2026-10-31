@@ -16,6 +16,19 @@ module SolarEdge
     # the framing sources.
     module Modbus
         class Error < StandardError; end
+
+        # The device's own refusal (an exception reply): it does not
+        # have those registers, or will not take that value.
+        class ModbusException < Error
+            attr_reader :code, :function
+
+            def initialize(code, function)
+                @code = code
+                @function = function
+                super("solaredge: Modbus exception #{code} on function " \
+                      "#{function}")
+            end
+        end
     end
 end
 

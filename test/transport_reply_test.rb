@@ -93,10 +93,10 @@ class SolarEdgeTransportReplyTest < Minitest::Test
         end
     end
 
-    def test_device_read_is_false_on_a_malformed_reply
+    def test_device_read_raises_on_a_malformed_reply
         device(*[answer("\x03")] * 3) do |transport|
             inverter = SolarEdge::Modbus::Inverter.new(transport:)
-            assert_equal false, inverter.read(:status)
+            assert_raises(Error) { inverter.read(:status) }
         end
     end
 

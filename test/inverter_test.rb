@@ -12,8 +12,9 @@ class SolarEdgeInverterTest < Minitest::Test
     Error  = Modbus::Error
 
     # Answers from a register image (address => raw 16-bit word);
-    # an address missing from the image raises, simulating a device
-    # that refuses or times out on that register.
+    # an address missing from the image is refused with an exception
+    # reply (code 2, illegal data address), as a device without that
+    # register answers.
     class FakeTransport
         attr_reader :reads
 
@@ -30,7 +31,7 @@ class SolarEdgeInverterTest < Minitest::Test
         def read_registers(_rtype, _unit, address, length)
             @reads << [address, length]
             (address...(address + length)).map do |a|
-                @image.fetch(a) { raise Error, "solaredge: no register #{a}" }
+                @image.fetch(a) { raise Modbus::ModbusException.new(2, 3) }
             end
         end
     end
@@ -79,10 +80,11 @@ class SolarEdgeInverterTest < Minitest::Test
         assert_equal [:Meter3], inv.meters.keys
     end
 
-    # A probe that cannot be read (its address absent from the image)
-    # is no battery; upstream counts it as one.
-    def test_batteries_skips_a_failed_probe
+    # A probe the device refuses (its address absent from the image)
+    # or leaves unimplemented is no battery; upstream counts both.
+    def test_batteries_skips_a_refused_or_unimplemented_probe
         assert_empty inverter({}).batteries
+        assert_empty inverter(0xe140 => 0xffff, 0xe240 => 0xffff).batteries
     end
 
     def test_batteries_excludes_the_sentinel255

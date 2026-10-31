@@ -32,9 +32,12 @@ class SolarEdgeTransportTest < Minitest::Test
         assert_equal write_request(0x20, [9, 10]), request
     end
 
-    def test_an_exception_response_raises
+    def test_an_exception_response_raises_its_code
         serve_exception(3, 2) do |transport|
-            assert_raises(Error) { transport.read_registers(:holding, 1, 0, 1) }
+            error = assert_raises(SolarEdge::Modbus::ModbusException) do
+                transport.read_registers(:holding, 1, 0, 1)
+            end
+            assert_equal [2, 3], [error.code, error.function]
         end
     end
 

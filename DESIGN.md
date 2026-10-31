@@ -15,15 +15,20 @@ It departs from upstream wherever upstream is wrong or awkward. The
 departures so far, each one a comparison with upstream's output will
 show:
 
+- A not-implemented register reads `nil`. Upstream returns 0, 0.0 or
+  `str(False)`, the text `"False"`, so a real zero and a missing value
+  look the same, and a missing scale factor (0) scales by 1.
 - A signed register (int16, scale factor, int32) holding SunSpec's
-  "not implemented" pattern reads 0. Upstream compares the signed
-  value, -32768, with 0x8000, never matches, and returns -32768.
-- A not-implemented string reads `""`; upstream returns `str(False)`,
-  the text `"False"`.
+  "not implemented" pattern is caught by its bits. Upstream compares
+  the signed value, -32768, with 0x8000, never matches, and returns
+  -32768.
+- A read that fails raises; upstream returns `False`. A device's
+  exception reply is not retried, and `read_all` leaves out only the
+  batches the device refuses.
 - Meter 3 is probed at its `c_sunspec_did`, 0x9e58; upstream probes
   0x9e59, one past it.
-- A battery probe that cannot be read means no battery; upstream counts
-  it as one (`False != 255`).
+- A battery probe the device refuses or leaves unimplemented means no
+  battery; upstream counts it as one.
 - `read_all` decodes each register at its own address. Upstream's
   decoder advances by the type's width and its offset by the table's
   length, so after battery `event_log` (a uint16 over two registers) it

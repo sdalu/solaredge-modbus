@@ -39,16 +39,19 @@ end
 - Values are raw: a quantity and its `_scale` register are read
   separately, and the value is `quantity * 10**scale`.
 - A register holding SunSpec's "not implemented" value (0xffff for a
-  uint16, 0x8000 for an int16 or scale factor, NaN for a float…)
-  decodes to `0`, `0.0` or `""`.
-- `read` and `read_all` try three times, reconnecting as needed; a
-  read that still fails returns `false` (`read_all` leaves the batch
-  out) rather than raising. `write` and the transport itself raise
-  `SolarEdge::Modbus::Error`: refused connection, Modbus exception
-  reply, a reply that does not answer the request (transaction, unit,
-  function, lengths), or one not whole within the timeout (3 s from
-  the request). Each closes the connection. An unknown register name
-  raises it too.
+  uint16, 0x8000 for an int16 or scale factor, NaN for a float, 0 for
+  an `acc32` counter, an empty string) decodes to `nil`, so check a
+  value and its scale before multiplying.
+- `read` tries three times, reconnecting as needed, then raises
+  `SolarEdge::Modbus::Error`: refused connection, a reply that does
+  not answer the request (transaction, unit, function, lengths), or
+  one not whole within the timeout (3 s from the request). Each closes
+  the connection. A device's exception reply raises
+  `SolarEdge::Modbus::ModbusException` (an `Error`, with `code` and
+  `function`) at once, as another try would get the same answer.
+- `read_all` leaves out a batch the device answers with an exception
+  reply (registers it does not have) and raises on any other failure.
+- An unknown register name raises `Error`.
 - `Device#write(name, value)` encodes and writes one register, and
   raises `Error` for a value its type cannot hold (an Integer in range
   for integer registers, a number within float32 for float ones).
@@ -74,7 +77,7 @@ end
   time. Close the connection after each reading (`disconnect`) when
   something else polls the same inverter.
 - An `acc32` of 0 is SunSpec's "not implemented", so an energy counter
-  that really is at 0 Wh cannot be told from one that is missing.
+  that really is at 0 Wh reads `nil`.
 - No command-line tool. nmakel's package has one
   (`solaredge-modbus --json`); this gem does not.
 

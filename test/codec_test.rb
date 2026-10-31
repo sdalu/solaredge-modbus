@@ -14,7 +14,7 @@ class SolarEdgeCodecTest < Minitest::Test
 
     def test_uint16_decodes_and_flags_not_implemented
         assert_equal 1234, Codec.decode([1234], :uint16, :int, :big)
-        assert_equal 0, Codec.decode([0xffff], :uint16, :int, :big)
+        assert_nil Codec.decode([0xffff], :uint16, :int, :big)
     end
 
     def test_int16_and_its_scale_alias_decode_signed
@@ -26,29 +26,29 @@ class SolarEdgeCodecTest < Minitest::Test
     # *signed* value that is -32768, which the raw-bits check (not the
     # signed value) must still catch.
     def test_int16_not_implemented_sentinel_is_the_bit_pattern
-        assert_equal 0, Codec.decode([0x8000], :int16, :int, :big)
-        assert_equal 0, Codec.decode([0x8000], :scale, :int, :big)
+        assert_nil Codec.decode([0x8000], :int16, :int, :big)
+        assert_nil Codec.decode([0x8000], :scale, :int, :big)
     end
 
     def test_uint32_and_acc32_share_their_decode_width
         assert_equal 70_000, Codec.decode([1, 4464], :uint32, :int, :big)
         assert_equal 70_000, Codec.decode([1, 4464], :acc32, :int, :big)
-        assert_equal 0, Codec.decode([0xffff, 0xffff], :uint32, :int, :big)
+        assert_nil Codec.decode([0xffff, 0xffff], :uint32, :int, :big)
         # ACC32's own sentinel is 0 (__init__.py:86), not 0xffffffff --
         # an inverter reporting exactly 0 Wh decodes as "not
         # implemented" too; that ambiguity is upstream's, kept as-is.
-        assert_equal 0, Codec.decode([0, 0], :acc32, :int, :big)
+        assert_nil Codec.decode([0, 0], :acc32, :int, :big)
     end
 
     def test_int32_decodes_signed_and_flags_its_own_sentinel
         assert_equal(-1, Codec.decode([0xffff, 0xffff], :int32, :int, :big))
-        assert_equal 0, Codec.decode([0x8000, 0], :int32, :int, :big)
+        assert_nil Codec.decode([0x8000, 0], :int32, :int, :big)
     end
 
     def test_uint64_decodes_and_flags_not_implemented
         assert_equal 1, Codec.decode([0, 0, 0, 1], :uint64, :int, :big)
         sentinel = [0xffff] * 4
-        assert_equal 0, Codec.decode(sentinel, :uint64, :int, :big)
+        assert_nil Codec.decode(sentinel, :uint64, :int, :big)
     end
 
     # README.md's own example (nmakel/solaredge_modbus @fd3ce7a,
@@ -65,9 +65,8 @@ class SolarEdgeCodecTest < Minitest::Test
     # 0xffffffff) are themselves NaN float32 bit patterns -- "not
     # implemented" is decoded.nan?, not a table lookup (see codec.rb).
     def test_float_not_implemented_sentinels_are_both_nan
-        assert_in_delta 0.0, Codec.decode([0x7fc0, 0], :float32, :float, :big)
-        assert_in_delta 0.0, Codec.decode([0xffff, 0xffff], :sefloat,
-                                          :float, :big)
+        assert_nil Codec.decode([0x7fc0, 0], :float32, :float, :big)
+        assert_nil Codec.decode([0xffff, 0xffff], :sefloat, :float, :big)
     end
 
     def test_string_decodes_utf8_and_strips_nuls_and_trailing_space
@@ -76,11 +75,16 @@ class SolarEdgeCodecTest < Minitest::Test
         assert_equal "SunS", Codec.decode(regs, :string, :str, :big)
     end
 
-    # Upstream returns str(False), the text "False"; an empty string
-    # is what an unset string register holds.
-    def test_an_unset_string_reads_as_empty
+    def test_an_unset_string_reads_as_nil
         regs = "\x00\x00\x00\x00".unpack("n*")
-        assert_equal "", Codec.decode(regs, :string, :str, :big)
+        assert_nil Codec.decode(regs, :string, :str, :big)
+    end
+
+    # A value one off each sentinel is a value, not "not implemented".
+    def test_values_beside_the_sentinels_are_values
+        assert_equal 0xfffe, Codec.decode([0xfffe], :uint16, :int, :big)
+        assert_equal(-32_767, Codec.decode([0x8001], :int16, :int, :big))
+        assert_equal 0, Codec.decode([0], :uint16, :int, :big)
     end
 
     # pymodbus's string decoder never applies wordorder.

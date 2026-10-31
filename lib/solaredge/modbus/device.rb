@@ -11,11 +11,9 @@ module SolarEdge
         # opposite wordorder -- only Inverter's power-control and
         # StorEdge-settings registers do).
         #
-        # Deliberately simplified from upstream's retry loop
-        # (__init__.py:269-287: reconnect-then-`continue` burns a retry
-        # without reading; here, a failed connect or read just tries the
-        # next attempt): the externally visible result is the same --
-        # up to `retries` tries, each one reconnecting first if needed.
+        # A read is tried up to RETRIES times, reconnecting first if
+        # needed (upstream's loop, __init__.py:269-287, spends a try on
+        # reconnecting); then it raises.
         #
         # read_all decodes each register from its own address, with its
         # own address's wordorder. Upstream's `_read_all`
@@ -49,12 +47,17 @@ module SolarEdge
             def connect = @transport.connect
             def disconnect = @transport.close
 
+            # The register's value, or nil when the device says it is
+            # not implemented. Raises Error when it cannot be read.
             def read(key)
                 reg = find(key)
                 raw = read_raw(reg.address, reg.length, reg.rtype)
-                return false if raw.nil?
                 Codec.decode(raw, reg.dtype, reg.vtype, wordorder(reg))
             end
+
+            # Every register of the device's batches; a batch the device
+            # refuses (ModbusException) is left out, any other failure
+            # raises.
 
             def read_all(rtype = :holding)
                 batches(rtype).each_with_object({}) do |group, acc|
@@ -91,7 +94,9 @@ module SolarEdge
                 addr_max = group.map { |_, r| r.address + r.length }.max
                 rtype    = group.first.last.rtype
                 raw = read_raw(addr_min, addr_max - addr_min, rtype)
-                raw.nil? ? {} : decode_batch(group, raw, addr_min)
+                decode_batch(group, raw, addr_min)
+            rescue ModbusException
+                {}
             end
 
             def decode_batch(group, raw, addr_min)
@@ -102,19 +107,26 @@ module SolarEdge
                 end
             end
 
+            # Up to RETRIES tries, reconnecting as needed, then the last
+            # failure is raised. A ModbusException is the device's
+            # answer, which another try would not change.
             def read_raw(address, length, rtype)
+                failure = nil
                 RETRIES.times do
-                    registers_read = try_read(address, length, rtype)
-                    return registers_read if registers_read&.size == length
+                    return try_read(address, length, rtype)
+                rescue ModbusException
+                    raise
+                rescue Error => e
+                    failure = e
                 end
-                nil
+                raise failure
             end
 
             def try_read(address, length, rtype)
                 connect unless connected?
-                @transport.read_registers(rtype, @unit, address, length)
-            rescue Error
-                nil
+                raw = @transport.read_registers(rtype, @unit, address, length)
+                return raw if raw.size == length
+                raise Error, "solaredge: #{raw.size} registers for #{length}"
             end
         end
     end

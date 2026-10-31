@@ -10,8 +10,9 @@ require "test_helper"
 # Meter/Battery/StorEdge's own real tables are exercised in their own
 # test files.
 class SolarEdgeDeviceTest < Minitest::Test
-    Register = SolarEdge::Modbus::Register
-    Error    = SolarEdge::Modbus::Error
+    Modbus   = SolarEdge::Modbus
+    Register = Modbus::Register
+    Error    = Modbus::Error
 
     # Two batches: batch 1 is one uint16 at 0x10; batch 2 is a uint16
     # at 0x20 and an int16 right after it at 0x21 -- read_all should
@@ -48,6 +49,7 @@ class SolarEdgeDeviceTest < Minitest::Test
         def read_registers(_rtype, _unit, address, length)
             @reads << [address, length]
             raise Error, "solaredge: simulated failure" if consume_failure?
+            raise Modbus::ModbusException.new(2, 3) if @refused == address
             (address...(address + length)).map { |a| @image.fetch(a) }
         end
 
@@ -60,6 +62,7 @@ class SolarEdgeDeviceTest < Minitest::Test
         end
 
         def fail_next(count) = @fail = count
+        def refuse(address) = @refused = address
 
         private
 
@@ -94,9 +97,27 @@ class SolarEdgeDeviceTest < Minitest::Test
         assert_equal 7, @device.read(:a)
     end
 
-    def test_read_gives_up_once_the_retry_budget_is_spent
+    def test_read_raises_once_the_retry_budget_is_spent
         @transport.fail_next(10)
-        refute @device.read(:a)
+        assert_raises(Error) { @device.read(:a) }
+        assert_equal 3, @transport.reads.size
+    end
+
+    # The device's own refusal is its answer: no second try.
+    def test_read_raises_a_refusal_without_retrying
+        @transport.refuse(0x10)
+        assert_raises(Modbus::ModbusException) { @device.read(:a) }
+        assert_equal 1, @transport.reads.size
+    end
+
+    def test_read_all_leaves_out_a_batch_the_device_refuses
+        @transport.refuse(0x20)
+        assert_equal({ a: 7 }, @device.read_all)
+    end
+
+    def test_read_all_raises_when_a_batch_cannot_be_read
+        @transport.fail_next(10)
+        assert_raises(Error) { @device.read_all }
     end
 
     def test_write_encodes_and_calls_the_transport

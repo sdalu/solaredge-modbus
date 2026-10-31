@@ -47,8 +47,7 @@ module SolarEdge
                 code = pdu.getbyte(0)
                 return if code == function
                 if code == (function | 0x80) && pdu.bytesize == 2
-                    raise Error, "solaredge: Modbus exception " \
-                                 "#{pdu.getbyte(1)} on function #{function}"
+                    raise ModbusException.new(pdu.getbyte(1), function)
                 end
                 raise Error, "solaredge: function #{code.inspect} in " \
                              "reply to #{function}"

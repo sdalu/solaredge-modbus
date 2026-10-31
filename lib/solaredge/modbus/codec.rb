@@ -11,6 +11,10 @@ module SolarEdge
         # standard Modbus). wordorder only changes which register comes
         # first in a 32- or 64-bit value: pymodbus's 16-bit and string
         # coders never look at it.
+        #
+        # A register holding SunSpec's "not implemented" value decodes
+        # to nil (upstream returns 0, 0.0 or "False", which a real zero
+        # cannot be told from).
         module Codec
             # SunSpec's "not implemented" values, __init__.py:79-90, as
             # bit patterns: a signed register is compared by its raw
@@ -62,7 +66,7 @@ module SolarEdge
 
             def decode(registers, dtype, vtype, wordorder)
                 bytes = bytes_of(registers, dtype, wordorder)
-                return absent(vtype) if not_implemented?(bytes, dtype)
+                return if not_implemented?(bytes, dtype)
                 cast(raw_value(bytes, dtype), vtype)
             end
 
@@ -97,13 +101,6 @@ module SolarEdge
                 return bytes.unpack1("g").nan? if FLOAT_TYPES.include?(dtype)
                 return decode_string(bytes).empty? if dtype == :string
                 bytes.unpack1(BITS.fetch(dtype)) == NOT_IMPLEMENTED[dtype]
-            end
-
-            # __init__.py:342-347: a not-implemented register reads as
-            # vtype(False), 0 or 0.0; a string as "" (upstream's
-            # str(False) would be the text "False").
-            def absent(vtype)
-                { int: 0, float: 0.0, str: "" }.fetch(vtype)
             end
 
             def cast(raw, vtype)
