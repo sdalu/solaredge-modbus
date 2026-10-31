@@ -15,6 +15,8 @@
   a choice it should record?
 - [ ] A register or rule changed: does its comment still cite
   upstream's __init__.py at fd3ce7a, or say why it differs?
+- [ ] Does the round depart from upstream's behaviour? Then is the
+  departure in DESIGN.md's list?
 
 ## Release
 

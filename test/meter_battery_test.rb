@@ -74,6 +74,29 @@ class SolarEdgeBatteryTest < Minitest::Test
         assert_in_delta 25.0, battery.read(:rated_energy)
     end
 
+    def test_strings_ignore_the_wordorder
+        regs = "LG Chem".b.ljust(32, "\x00").unpack("n*")
+        image = regs.each_with_index.to_h { |w, i| [0xe100 + i, w] }
+        battery = SolarEdge::Modbus::Battery.new(
+            offset: 0, transport: SolarEdgeFakeTransport.new(image)
+        )
+        assert_equal "LG Chem", battery.read(:c_manufacturer)
+    end
+
+    # event_log is a uint16 over two registers: its first. In read_all
+    # the next register, event_log_internal, is read at its own address
+    # (upstream's decoder would be a word early there).
+    def test_event_logs_read_their_own_first_register
+        image = (0xe100..0xe193).to_h { [it, 0] }
+        image.merge!(0xe18a => 1, 0xe18b => 2, 0xe191 => 17, 0xe192 => 34)
+        battery = SolarEdge::Modbus::Battery.new(
+            offset: 0, transport: SolarEdgeFakeTransport.new(image)
+        )
+        assert_equal 1, battery.read(:event_log)
+        all = battery.read_all
+        assert_equal [1, 34], all.values_at(:event_log, :event_log_internal)
+    end
+
     def test_an_offset_past_battery_2_is_refused
         transport = SolarEdgeFakeTransport.new({})
         assert_raises(IndexError) do

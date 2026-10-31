@@ -9,10 +9,9 @@ module SolarEdge
             # self.registers; see modbus.rb for the commit).
             # SolarEdge::Battery adds its instance offset
             # (Constants::BATTERY_REGISTER_OFFSETS) to every address at
-            # read time. Wordorder is LITTLE for every Battery register
-            # (SolarEdge::Battery::WORDORDER), as upstream's
-            # self.wordorder = Endian.LITTLE applies to the whole class,
-            # strings included.
+            # read time. Wordorder is LITTLE for the whole class
+            # (SolarEdge::Battery::WORDORDER); Codec applies it to 32-
+            # and 64-bit values only.
             module Battery
                 r = lambda do |address, length, dtype, vtype, batch|
                     Register.new(address:, length:, rtype: :holding,

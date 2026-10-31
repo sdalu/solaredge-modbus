@@ -63,7 +63,7 @@ class SolarEdgeInverterTest < Minitest::Test
     # the meter is attached; Meter2's addresses carry its instance
     # offset (Constants::METER_REGISTER_OFFSETS[1] == 0xae).
     def test_meters_finds_an_attached_meter_and_offsets_its_addresses
-        inv = inverter(0x9cfc => 0, 0x9daa => 203, 0x9e59 => 0)
+        inv = inverter(0x9cfc => 0, 0x9daa => 203, 0x9e58 => 0)
         meters = inv.meters
         assert_equal [:Meter2], meters.keys
         base = Modbus::Registers::Meter::REGISTERS.fetch(:c_manufacturer)
@@ -72,13 +72,17 @@ class SolarEdgeInverterTest < Minitest::Test
         assert_equal base.address + offset, meter2.address
     end
 
-    # A probe that fails outright (its address absent from the image)
-    # decodes to nil here (False in Python); `nil != 255` is true, so
-    # -- the same as upstream's own `if v != 255` -- a failed probe
-    # still counts as present. Carried over on purpose (see
-    # inverter.rb).
-    def test_batteries_counts_a_failed_probe_as_present
-        assert_equal %i[Battery1 Battery2], inverter({}).batteries.keys
+    # Meter 3's probe is its c_sunspec_did, 0x9cfc + 0x15c (upstream
+    # probes one past it).
+    def test_meters_probes_meter3_at_its_sunspec_did
+        inv = inverter(0x9cfc => 0, 0x9daa => 0, 0x9e58 => 203)
+        assert_equal [:Meter3], inv.meters.keys
+    end
+
+    # A probe that cannot be read (its address absent from the image)
+    # is no battery; upstream counts it as one.
+    def test_batteries_skips_a_failed_probe
+        assert_empty inverter({}).batteries
     end
 
     def test_batteries_excludes_the_sentinel255

@@ -5,7 +5,7 @@ itself, the meters and batteries attached to it, and its StorEdge
 settings, through the SunSpec registers SolarEdge exposes. A Ruby port
 of [nmakel/solaredge_modbus](https://github.com/nmakel/solaredge_modbus)
 at commit `fd3ce7a` (2025-01-08): same register tables, same names, same
-decoding, quirks included.
+decoding, without upstream's bugs (DESIGN.md lists them).
 
 It needs only Ruby's standard library (Ruby 3.4).
 
@@ -38,17 +38,22 @@ end
   `lib/solaredge/modbus/registers/`.
 - Values are raw: a quantity and its `_scale` register are read
   separately, and the value is `quantity * 10**scale`.
-- A register the device marks as not implemented decodes to `0`, `0.0`
-  or the string `"False"` (upstream's `vtype(False)`).
+- A register holding SunSpec's "not implemented" value (0xffff for a
+  uint16, 0x8000 for an int16 or scale factor, NaN for a float…)
+  decodes to `0`, `0.0` or `""`.
 - `read` and `read_all` try three times, reconnecting as needed; a
   read that still fails returns `false` (`read_all` leaves the batch
   out) rather than raising. `write` and the transport itself raise
   `SolarEdge::Modbus::Error`: refused connection, Modbus exception
-  reply, a device that hangs up mid-reply or stays silent past its
-  timeout (3 s). An unknown register name raises it too.
-- `Device#write(name, value)` encodes and writes one register. Nothing
-  here has been written to a real inverter: writes are checked only
-  against the framing tests.
+  reply, a reply that does not answer the request (transaction, unit,
+  function, lengths), or one not whole within the timeout (3 s from
+  the request). Each closes the connection. An unknown register name
+  raises it too.
+- `Device#write(name, value)` encodes and writes one register, and
+  raises `Error` for a value its type cannot hold (an Integer in range
+  for integer registers, a number within float32 for float ones).
+  Nothing here has been written to a real inverter: writes are checked
+  only against the framing tests.
 - A device connects on its first read and stays connected until
   `disconnect`. `Inverter#meters` and `#batteries` share the
   inverter's connection.
@@ -68,9 +73,8 @@ end
 - SolarEdge inverters are reported to accept one Modbus TCP client at a
   time. Close the connection after each reading (`disconnect`) when
   something else polls the same inverter.
-- Upstream's quirks are kept, not fixed: an `acc32` of exactly 0 reads
-  as "not implemented" (0), a battery probe that fails counts as a
-  battery present, and meter 3's probe address is one past the pattern.
+- An `acc32` of 0 is SunSpec's "not implemented", so an energy counter
+  that really is at 0 Wh cannot be told from one that is missing.
 - No command-line tool. nmakel's package has one
   (`solaredge-modbus --json`); this gem does not.
 

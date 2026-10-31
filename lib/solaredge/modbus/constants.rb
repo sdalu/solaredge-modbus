@@ -48,9 +48,7 @@ module SolarEdge
                                     Fault Idle].freeze
 
             # __init__.py:177-186: per-instance address offset, meter 1
-            # /battery 1 first. Meter index 2's probe id (see
-            # Registers::INVERTER::METER_DIDS) is one past 0x9cfc +
-            # this table's 0x15c -- kept as upstream wrote it.
+            # /battery 1 first.
             METER_REGISTER_OFFSETS   = [0x0, 0xae, 0x15c].freeze
             BATTERY_REGISTER_OFFSETS = [0x0, 0x100].freeze
         end

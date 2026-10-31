@@ -17,14 +17,13 @@ module SolarEdge
         # next attempt): the externally visible result is the same --
         # up to `retries` tries, each one reconnecting first if needed.
         #
-        # Deliberately generalised from upstream's `_read_all`
-        # (__init__.py:365-411), which decides a whole batch's wordorder
-        # from the batch's *start* address, not each register's own
-        # address. For every table this port carries, the two choices
-        # agree on every single register (the LITTLE_ENDIAN addresses
-        # fall in batches that are wholly little-endian), so reading
-        # each register's own address here is equivalent and avoids
-        # relying on that batch-start quirk.
+        # read_all decodes each register from its own address, with its
+        # own address's wordorder. Upstream's `_read_all`
+        # (__init__.py:365-411) takes the wordorder from the batch's
+        # start address (the same on every table here) and advances its
+        # decoder by the dtype's width but its offset by the table's
+        # length, so a register after a uint16 of length 2 (battery
+        # event_log) is read one word early.
         class Device
             WORDORDER = :big
             LITTLE_ENDIAN = [].freeze

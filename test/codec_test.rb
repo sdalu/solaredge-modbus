@@ -76,12 +76,46 @@ class SolarEdgeCodecTest < Minitest::Test
         assert_equal "SunS", Codec.decode(regs, :string, :str, :big)
     end
 
-    # str(False) in Python literally is the text "False" --
-    # __init__.py:342-347's vtype(False) coercion for a not-implemented
-    # STRING register; kept as that exact quirk, not "fixed" to "".
-    def test_string_not_implemented_coerces_to_the_word_false
+    # Upstream returns str(False), the text "False"; an empty string
+    # is what an unset string register holds.
+    def test_an_unset_string_reads_as_empty
         regs = "\x00\x00\x00\x00".unpack("n*")
-        assert_equal "False", Codec.decode(regs, :string, :str, :big)
+        assert_equal "", Codec.decode(regs, :string, :str, :big)
+    end
+
+    # pymodbus's string decoder never applies wordorder.
+    def test_strings_ignore_wordorder
+        regs = "LG Cham\x00".b.unpack("n*")
+        assert_equal "LG Cham", Codec.decode(regs, :string, :str, :little)
+        assert_equal regs, Codec.encode("LG Cham\x00", :string, :little)
+    end
+
+    # A uint16 over two registers (battery event_log) is its first.
+    def test_a_16bit_value_reads_the_first_of_its_registers
+        assert_equal 1, Codec.decode([1, 2], :uint16, :int, :little)
+        assert_equal 1, Codec.decode([1, 2], :uint16, :int, :big)
+    end
+
+    def test_encode_pads_an_odd_string_with_a_nul
+        assert_equal [0x6162, 0x6300], Codec.encode("abc", :string, :big)
+    end
+
+    # struct.pack refuses these where Array#pack would wrap them.
+    def test_encode_refuses_what_does_not_fit_its_type
+        [[65_536, :uint16], [-1, :uint16], [50.9, :uint16],
+         [40_000, :int16], [2**32, :uint32], [-1, :uint64],
+         [2**31, :int32], [1e39, :float32], ["1", :float32]]
+            .each do |value, dtype|
+                assert_raises(Error, "#{value} as #{dtype}") do
+                    Codec.encode(value, dtype, :big)
+                end
+            end
+    end
+
+    def test_encode_takes_the_edges_of_each_range
+        assert_equal [0xffff], Codec.encode(65_535, :uint16, :big)
+        assert_equal [0x8000], Codec.encode(-32_768, :int16, :big)
+        assert_equal [0x4120, 0], Codec.encode(10, :float32, :big)
     end
 
     # wordorder LITTLE reverses which register is most significant

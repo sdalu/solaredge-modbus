@@ -22,12 +22,10 @@ module SolarEdge
             end
 
             # __init__.py:588-591: present unless the probe decodes to
-            # exactly 255 (Python's `if v != 255`). A failed read
-            # decodes to False there and nil here; False != 255 and
-            # nil != 255 are both true, so a failed probe still counts
-            # as present -- the quirk carries over unchanged.
+            # exactly 255 (Python's `if v != 255`), or cannot be read.
+            # (Upstream counts a failed probe as present: False != 255.)
             def batteries
-                found(:battery) { |v| v != 255 }.to_h do |i|
+                found(:battery) { |v| v && v != 255 }.to_h do |i|
                     [:"Battery#{i + 1}", Battery.new(parent: self, offset: i)]
                 end
             end

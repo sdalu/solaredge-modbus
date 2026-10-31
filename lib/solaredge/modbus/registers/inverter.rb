@@ -100,11 +100,10 @@ module SolarEdge
                                  0xe00e, 0xe010].freeze
 
                 # meter_dids / battery_dids, __init__.py:571-581: probe
-                # addresses for #meters and #batteries. Index 2's meter
-                # probe (0x9e59) is one past 0x9cfc + METER_REGISTER_
-                # OFFSETS[2] (0x15c = 0x9e58) -- kept exactly as upstream
-                # wrote it, not "corrected" to the pattern.
-                METER_DIDS = [0x9cfc, 0x9daa, 0x9e59].freeze
+                # addresses for #meters and #batteries, each meter's
+                # c_sunspec_did: 0x9cfc + METER_REGISTER_OFFSETS[i].
+                # (Upstream's third, 0x9e59, is one past it.)
+                METER_DIDS = [0x9cfc, 0x9daa, 0x9e58].freeze
                 BATTERY_DIDS = [0xe140, 0xe240].freeze
             end
         end

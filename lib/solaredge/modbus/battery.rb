@@ -6,9 +6,9 @@ module SolarEdge
         # of nmakel/solaredge_modbus @fd3ce7a (see modbus.rb for the
         # commit): Registers::Battery's table with `offset` (0 or 1,
         # matching Constants::BATTERY_REGISTER_OFFSETS) added to every
-        # address, wordorder LITTLE throughout (self.wordorder =
-        # Endian.LITTLE in __init__.py:723, applying to every register
-        # of the class -- strings included, as upstream has it). Built
+        # address, wordorder LITTLE (self.wordorder = Endian.LITTLE in
+        # __init__.py:723; it orders the words of 32- and 64-bit values
+        # only, see Codec). Built
         # via Inverter#batteries, or directly with `parent:` or
         # `host:`/`port:`.
         class Battery < Device

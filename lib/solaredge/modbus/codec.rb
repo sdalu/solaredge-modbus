@@ -5,21 +5,23 @@ module SolarEdge
         # Decodes/encodes one register value from/to a run of raw 16-bit
         # Modbus words, per __init__.py:297-349 of nmakel/
         # solaredge_modbus @fd3ce7a (_encode_value/_decode_value; see
-        # modbus.rb for the commit). byteorder is always big-endian
-        # there (each register's own two bytes, standard Modbus);
-        # wordorder (big or little) only changes which register comes
-        # first when a value spans several -- implemented here as
-        # reversing the register list before packing/after unpacking.
+        # modbus.rb for the commit) and the pymodbus 3.5 payload
+        # coders it calls (upstream's setup.cfg pins pymodbus ~= 3.5.0).
+        # byteorder is always big-endian (each register's own two bytes,
+        # standard Modbus). wordorder only changes which register comes
+        # first in a 32- or 64-bit value: pymodbus's 16-bit and string
+        # coders never look at it.
         module Codec
-            # SUNSPEC_NOTIMPLEMENTED, __init__.py:79-90. FLOAT32/SEFLOAT
-            # are not listed: both decode via decode_32bit_float, and
-            # their sentinels (0x7fc00000 and 0xffffffff) are each a NaN
-            # bit pattern, so "not implemented" is simply decoded.nan?
-            # (see not_implemented? below).
+            # SunSpec's "not implemented" values, __init__.py:79-90, as
+            # bit patterns: a signed register is compared by its raw
+            # bits, so int16 0x8000 is caught. (Upstream compares the
+            # signed value, -32768, with 0x8000 and never matches.)
+            # Floats have none here: both of theirs are NaN patterns,
+            # and any NaN counts.
             NOT_IMPLEMENTED = {
                 uint16: 0xffff, uint32: 0xffffffff,
                 uint64: 0xffffffffffffffff, int16: 0x8000, scale: 0x8000,
-                acc32: 0x00000000, int32: 0x80000000, string: ""
+                acc32: 0x00000000, int32: 0x80000000
             }.freeze
 
             FLOAT_TYPES = %i[float32 sefloat].freeze
@@ -31,14 +33,25 @@ module SolarEdge
                         acc32: "N", int32: "l>", uint64: "Q>",
                         float32: "g", sefloat: "g" }.freeze
 
-            # The same widths, but always unsigned -- NOT_IMPLEMENTED's
-            # sentinels are bit patterns (0x8000, 0x80000000...), so a
-            # signed dtype (int16, scale, int32) must compare its raw
-            # *bits*, not the value decode_value_signed already turned
-            # negative, against them.
-            UNSIGNED_FORMATS = { uint16: "n", int16: "n", scale: "n",
-                                 uint32: "N", acc32: "N", int32: "N",
-                                 uint64: "Q>" }.freeze
+            # The same widths, always unsigned: the raw bits that
+            # NOT_IMPLEMENTED is compared with.
+            BITS = { uint16: "n", int16: "n", scale: "n", uint32: "N",
+                     acc32: "N", int32: "N", uint64: "Q>" }.freeze
+
+            # Registers each dtype decodes, from the start of what was
+            # read: pymodbus's decoders take their own width, whatever
+            # the table's length (battery event_log is a uint16 over 2).
+            WIDTHS = { uint16: 1, int16: 1, scale: 1, uint32: 2, acc32: 2,
+                       int32: 2, float32: 2, sefloat: 2, uint64: 4 }.freeze
+
+            # What struct.pack accepts for each integer format; out of
+            # range, it raises rather than wrapping.
+            RANGES = { uint16: 0..0xffff, int16: -0x8000..0x7fff,
+                       scale: -0x8000..0x7fff, uint32: 0..0xffffffff,
+                       int32: -0x80000000..0x7fffffff,
+                       uint64: 0..0xffffffffffffffff }.freeze
+
+            FLOAT32_MAX = 3.4028234663852886e38
 
             # _encode_value's if/elif chain, __init__.py:300-319: no
             # ACC32 branch there (an accumulator is read-only in
@@ -48,27 +61,28 @@ module SolarEdge
             module_function
 
             def decode(registers, dtype, vtype, wordorder)
-                bytes = bytes_of(registers, wordorder)
-                return coerce_false(vtype) if not_implemented?(bytes, dtype)
+                bytes = bytes_of(registers, dtype, wordorder)
+                return absent(vtype) if not_implemented?(bytes, dtype)
                 cast(raw_value(bytes, dtype), vtype)
             end
 
             def encode(value, dtype, wordorder)
-                bytes = raw_bytes(value, dtype)
-                registers = bytes.unpack("n*")
-                wordorder == :little ? registers.reverse : registers
+                return encode_string(value) if dtype == :string
+                check_encodable(value, dtype)
+                words = [value].pack(ENCODE_FORMATS.fetch(dtype)).unpack("n*")
+                wordorder == :little ? words.reverse : words
             end
 
-            def bytes_of(registers, wordorder)
-                ordered = wordorder == :little ? registers.reverse : registers
-                ordered.pack("n*")
+            def bytes_of(registers, dtype, wordorder)
+                return registers.pack("n*") if dtype == :string
+                words = registers.first(WIDTHS.fetch(dtype) { unknown(dtype) })
+                words = words.reverse if wordorder == :little
+                words.pack("n*")
             end
 
             def raw_value(bytes, dtype)
                 return decode_string(bytes) if dtype == :string
-                bytes.unpack1(FORMATS.fetch(dtype) do
-                    raise Error, "solaredge: unknown register type #{dtype}"
-                end)
+                bytes.unpack1(FORMATS.fetch(dtype))
             end
 
             # decode_string, __init__.py:339: utf-8, invalid bytes
@@ -81,17 +95,15 @@ module SolarEdge
 
             def not_implemented?(bytes, dtype)
                 return bytes.unpack1("g").nan? if FLOAT_TYPES.include?(dtype)
-                return decode_string(bytes) == "" if dtype == :string
-                bits = bytes.unpack1(UNSIGNED_FORMATS.fetch(dtype))
-                bits == NOT_IMPLEMENTED.fetch(dtype)
+                return decode_string(bytes).empty? if dtype == :string
+                bytes.unpack1(BITS.fetch(dtype)) == NOT_IMPLEMENTED[dtype]
             end
 
-            # __init__.py:342-347: a not-implemented or NaN register
-            # becomes vtype(False) -- 0 for int, 0.0 for float, and (as
-            # Python's str(False) literally reads) the text "False" for
-            # a string register.
-            def coerce_false(vtype)
-                { int: 0, float: 0.0, str: "False" }.fetch(vtype)
+            # __init__.py:342-347: a not-implemented register reads as
+            # vtype(False), 0 or 0.0; a string as "" (upstream's
+            # str(False) would be the text "False").
+            def absent(vtype)
+                { int: 0, float: 0.0, str: "" }.fetch(vtype)
             end
 
             def cast(raw, vtype)
@@ -100,11 +112,34 @@ module SolarEdge
                 raw
             end
 
-            def raw_bytes(value, dtype)
-                return value.to_s.b if dtype == :string
-                [value].pack(ENCODE_FORMATS.fetch(dtype) do
+            # add_string packs the bytes as they are; to_registers pads
+            # an odd count with a NUL.
+            def encode_string(value)
+                bytes = value.to_s.b
+                bytes << "\x00" if bytes.bytesize.odd?
+                bytes.unpack("n*")
+            end
+
+            def check_encodable(value, dtype)
+                ENCODE_FORMATS.fetch(dtype) do
                     raise Error, "solaredge: cannot encode #{dtype}"
-                end)
+                end
+                return check_float(value) if FLOAT_TYPES.include?(dtype)
+                return if value.is_a?(Integer) && RANGES[dtype].cover?(value)
+                raise Error, "solaredge: #{value.inspect} is not a #{dtype}"
+            end
+
+            # struct.pack("f") takes any real number and infinities, but
+            # refuses a finite value past float32's range.
+            def check_float(value)
+                fits = value.is_a?(Numeric) && !value.is_a?(Complex) &&
+                       !(value.finite? && value.abs > FLOAT32_MAX)
+                raise Error, "solaredge: #{value.inspect} is not a float32" \
+                    unless fits
+            end
+
+            def unknown(dtype)
+                raise Error, "solaredge: unknown register type #{dtype}"
             end
         end
     end
