@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "solaredge/modbus/transport"
+require "solaredge/modbus/error"
 
 module SolarEdge
     module Modbus
@@ -9,7 +9,10 @@ module SolarEdge
         # before its lengths and echoes are found to agree with the
         # request, and each disagreement is an Error.
         module Frame
-            WRITE = Transport::FUNCTION.fetch(:write)
+            # Read holding registers, read input registers, write
+            # multiple registers.
+            FUNCTION = { holding: 3, input: 4, write: 16 }.freeze
+            WRITE = FUNCTION.fetch(:write)
 
             module_function
 

@@ -10,7 +10,8 @@ module SolarEdge
             attr_reader :number
 
             def initialize(number:, **)
-                unless (1..self.class::OFFSETS.size).cover?(number)
+                unless number.is_a?(Integer) &&
+                       (1..self.class::OFFSETS.size).cover?(number)
                     raise ArgumentError, "no #{self.class.name} #{number}"
                 end
                 super(**)

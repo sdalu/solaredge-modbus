@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "solaredge/modbus/error"
+
 module SolarEdge
     module Modbus
         # Decodes/encodes one register value from/to a run of raw 16-bit
@@ -61,7 +63,19 @@ module SolarEdge
                 raw_value(bytes, dtype)
             end
 
-            def encode(value, dtype, wordorder)
+            # length: the register's, if the words must fit it; a string
+            # is then padded with NULs to it.
+            def encode(value, dtype, wordorder, length: nil)
+                words = encode_words(value, dtype, wordorder)
+                return words unless length
+                if words.size > length
+                    raise Error, "solaredge: #{words.size} registers of " \
+                                 "#{dtype} for a #{length}-register field"
+                end
+                dtype == :string ? words + ([0] * (length - words.size)) : words
+            end
+
+            def encode_words(value, dtype, wordorder)
                 return encode_string(value) if dtype == :string
                 check_encodable(value, dtype)
                 words = [value].pack(ENCODE_FORMATS.fetch(dtype)).unpack("n*")

@@ -22,9 +22,8 @@ task :inverter do
         port: Integer(ENV.fetch("SOLAREDGE_PORT", "1502"))
     )
     begin
-        power = inverter.read(:power_ac) *
-                (10.0**inverter.read(:power_ac_scale))
-        puts "status #{inverter.read(:status)}, #{power.round(1)} W"
+        power = inverter.scaled(:power_ac, :power_ac_scale)
+        puts "status #{inverter.read(:status)}, #{power&.round(1) || "n/a"} W"
     ensure
         inverter.disconnect
     end

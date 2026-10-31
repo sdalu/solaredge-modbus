@@ -43,6 +43,7 @@ class SolarEdgeDeviceTest < Minitest::Test
             @reads << [address, length]
             raise Error, "solaredge: simulated failure" if consume_failure?
             raise Modbus::ModbusException.new(2, 3) if @refused == address
+            raise Modbus::ModbusException.new(6, 3) if busy?(address)
             (address...(address + length)).map { |a| @image.fetch(a) }
         end
 
@@ -57,7 +58,16 @@ class SolarEdgeDeviceTest < Minitest::Test
         def fail_next(count) = @fail = count
         def refuse(address) = @refused = address
 
+        # Answers "server busy" (exception 6) `times` times at address.
+        def busy(address, times) = (@busy ||= Hash.new(0))[address] = times
+
         private
+
+        def busy?(address)
+            return false unless @busy&.fetch(address, 0)&.positive?
+            @busy[address] -= 1
+            true
+        end
 
         def consume_failure?
             return false unless @fail.positive?
@@ -69,7 +79,7 @@ class SolarEdgeDeviceTest < Minitest::Test
     def setup
         @image = { 0x10 => 7, 0x20 => 42, 0x21 => 0xffff }
         @transport = FakeTransport.new(@image)
-        @device = Toy.new(transport: @transport)
+        @device = Toy.new(transport: @transport, retry_delays: [0, 0])
     end
 
     def test_read_decodes_one_register
@@ -85,32 +95,18 @@ class SolarEdgeDeviceTest < Minitest::Test
         assert_equal [[0x10, 1], [0x20, 2]], @transport.reads
     end
 
-    def test_read_retries_within_budget_then_succeeds
-        @transport.fail_next(2)
-        assert_equal 7, @device.read(:a)
-    end
-
-    def test_read_raises_once_the_retry_budget_is_spent
-        @transport.fail_next(10)
-        assert_raises(Error) { @device.read(:a) }
-        assert_equal 3, @transport.reads.size
-    end
-
-    # The device's own refusal is its answer: no second try.
-    def test_read_raises_a_refusal_without_retrying
-        @transport.refuse(0x10)
-        assert_raises(Modbus::ModbusException) { @device.read(:a) }
-        assert_equal 1, @transport.reads.size
+    def test_scaled_applies_the_scale_or_gives_nil
+        @image.merge!(0x20 => 21_413, 0x21 => 0xffff)
+        assert_in_delta 2141.3, @device.scaled(:b, :c)
+        @image[0x21] = 0x8000
+        assert_nil @device.scaled(:b, :c)
+        @image.merge!(0x20 => 0xffff, 0x21 => 0xffff)
+        assert_nil @device.scaled(:b, :c)
     end
 
     def test_read_all_leaves_out_a_batch_the_device_refuses
         @transport.refuse(0x20)
         assert_equal({ a: 7 }, @device.read_all)
-    end
-
-    def test_read_all_raises_when_a_batch_cannot_be_read
-        @transport.fail_next(10)
-        assert_raises(Error) { @device.read_all }
     end
 
     def test_write_encodes_and_calls_the_transport
@@ -157,5 +153,75 @@ class SolarEdgeDeviceTest < Minitest::Test
         child = Toy.new(parent: @device)
         assert_same @transport, child.transport
         assert_equal @device.unit, child.unit
+    end
+end
+
+# Device's retries: what is tried again, how often, after what delay.
+class SolarEdgeDeviceRetryTest < Minitest::Test
+    Modbus = SolarEdge::Modbus
+    Error  = Modbus::Error
+    Toy    = SolarEdgeDeviceTest::Toy
+
+    def setup
+        @image = { 0x10 => 7, 0x20 => 42, 0x21 => 0xffff }
+        @transport = SolarEdgeDeviceTest::FakeTransport.new(@image)
+        @device = Toy.new(transport: @transport, retry_delays: [0, 0])
+    end
+
+    def test_read_retries_within_budget_then_succeeds
+        @transport.fail_next(2)
+        assert_equal 7, @device.read(:a)
+    end
+
+    def test_read_raises_once_the_retry_budget_is_spent
+        @transport.fail_next(10)
+        assert_raises(Error) { @device.read(:a) }
+        assert_equal 3, @transport.reads.size
+    end
+
+    # The device's own refusal is its answer: no second try.
+    def test_read_raises_a_refusal_without_retrying
+        @transport.refuse(0x10)
+        assert_raises(Modbus::ModbusException) { @device.read(:a) }
+        assert_equal 1, @transport.reads.size
+    end
+
+    # Busy is not "not there": it is tried again, and raises only once
+    # the tries are spent.
+    def test_read_tries_a_busy_device_again
+        @transport.busy(0x10, 2)
+        assert_equal 7, @device.read(:a)
+        assert_equal 3, @transport.reads.size
+    end
+
+    def test_read_raises_a_device_busy_past_its_tries
+        @transport.busy(0x10, 3)
+        error = assert_raises(Modbus::ModbusException) { @device.read(:a) }
+        assert_equal 6, error.code
+    end
+
+    def test_read_all_raises_on_a_batch_busy_past_its_tries
+        @transport.busy(0x20, 3)
+        assert_raises(Modbus::ModbusException) { @device.read_all }
+    end
+
+    def test_retries_wait_their_delays
+        device = Toy.new(transport: @transport, retry_delays: [0.05, 0.1])
+        @transport.fail_next(2)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        assert_equal 7, device.read(:a)
+        waited = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+        assert_operator waited, :>=, 0.15
+    end
+
+    def test_a_child_shares_its_parents_retry_delays
+        assert_equal [0, 0], Toy.new(parent: @device).retry_delays
+        assert_equal Modbus::Device::RETRY_DELAYS,
+                     Toy.new(transport: @transport).retry_delays
+    end
+
+    def test_read_all_raises_when_a_batch_cannot_be_read
+        @transport.fail_next(10)
+        assert_raises(Error) { @device.read_all }
     end
 end

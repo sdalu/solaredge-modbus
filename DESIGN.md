@@ -69,6 +69,19 @@ files are kept separate so that a `sunspec` gem can start from them if
 an inverter of another brand arrives, but the gem does not claim more
 than the tables give.
 
+## Tried again, or not
+
+An inverter takes one Modbus client at a time, and another may hold it
+for a moment; a device can also answer busy. So a read that fails for
+a reason that may pass is tried again, after a pause that gives the
+other client time to let go (0.5 s, then 1 s), instead of three tries
+back to back that meet the same busy slot. A refusal (exception codes
+1 to 3) is the device's answer and is final at once, and only a
+refusal means "not there": discovery and `read_all` take a busy reply
+for what it is, and raise rather than lose a meter or a batch without
+a word. Writes are sent once: a write that timed out may have been
+applied, and a caller who repeats it should know they are.
+
 ## A Modbus client of its own
 
 Modbus TCP is small here: the MBAP header and three function codes (3,

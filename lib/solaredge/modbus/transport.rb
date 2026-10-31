@@ -2,6 +2,9 @@
 
 require "socket"
 
+require "solaredge/modbus/error"
+require "solaredge/modbus/frame"
+
 module SolarEdge
     module Modbus
         # Modbus TCP over a socket: each request is an MBAP header
@@ -18,8 +21,6 @@ module SolarEdge
         # else closes the connection, so a reply that comes late is
         # never read as the answer to the next request.
         class Transport
-            FUNCTION = { holding: 3, input: 4, write: 16 }.freeze
-
             # MBAP length: the unit byte and a PDU of 1 to 253 bytes.
             LENGTHS = 2..254
 
@@ -49,7 +50,7 @@ module SolarEdge
             end
 
             def read_registers(type, unit, address, count)
-                function = FUNCTION.fetch(type)
+                function = Frame::FUNCTION.fetch(type)
                 exchange(unit, [function, address, count].pack("Cnn")) do |pdu|
                     Frame.registers(pdu, function, count)
                 end

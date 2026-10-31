@@ -42,6 +42,11 @@ class SolarEdgeMeterTest < Minitest::Test
         assert_raises(ArgumentError) { meter(0, {}) }
         assert_raises(ArgumentError) { meter(4, {}) }
     end
+
+    def test_a_meter_number_must_be_an_integer
+        assert_raises(ArgumentError) { meter(1.5, {}) }
+        assert_raises(ArgumentError) { meter("1", {}) }
+    end
 end
 
 # Battery: battery 1's table, the other at 0x100; low word first.

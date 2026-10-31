@@ -16,8 +16,9 @@ class SolarEdgeInverterTest < Minitest::Test
     class FakeTransport
         attr_reader :reads
 
-        def initialize(image)
+        def initialize(image, busy: {})
             @image = image
+            @busy = busy
             @reads = []
             @connected = false
         end
@@ -28,14 +29,20 @@ class SolarEdgeInverterTest < Minitest::Test
 
         def read_registers(_type, _unit, address, length)
             @reads << [address, length]
+            if @busy.fetch(address, 0).positive?
+                @busy[address] -= 1
+                raise Modbus::ModbusException.new(6, 3)
+            end
             (address...(address + length)).map do |a|
                 @image.fetch(a) { raise Modbus::ModbusException.new(2, 3) }
             end
         end
     end
 
-    def inverter(image)
-        Modbus::Inverter.new(transport: FakeTransport.new(image))
+    # busy: address => how many times it answers "server busy" first.
+    def inverter(image, busy = {})
+        Modbus::Inverter.new(transport: FakeTransport.new(image, busy:),
+                             retry_delays: [0, 0])
     end
 
     # power_ac 21413, scale -1 -> README.md's own worked example
@@ -81,6 +88,12 @@ class SolarEdgeInverterTest < Minitest::Test
     def test_advanced_power_control_enable_is_one_32bit_value
         inv = inverter(0xf142 => 1, 0xf143 => 0)
         assert_equal 1, inv.read(:advanced_power_control_enable)
+    end
+
+    # A busy reply is not a missing meter.
+    def test_meters_finds_a_meter_that_was_busy_at_first
+        inv = inverter({ 0x9cfc => 203 }, { 0x9cfc => 1 })
+        assert_equal [1], inv.meters.map(&:number)
     end
 
     def test_meters_skips_an_absent_meter

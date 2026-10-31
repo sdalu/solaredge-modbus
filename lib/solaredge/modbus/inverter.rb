@@ -37,8 +37,8 @@ module SolarEdge
             # nil when the device refuses the register: none there.
             def probe(device, key)
                 device.read(key)
-            rescue ModbusException
-                nil
+            rescue ModbusException => e
+                raise unless e.refusal?
             end
         end
     end
