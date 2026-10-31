@@ -129,6 +129,13 @@ class SolarEdgeDeviceTest < Minitest::Test
         assert_empty @transport.writes
     end
 
+    # Low word first, both words: 1 is [1, 0].
+    def test_write_sends_a_32bit_power_control_value_whole
+        inverter = Modbus::Inverter.new(transport: @transport)
+        inverter.write(:advanced_power_control_enable, 1)
+        assert_equal [0xf142, [1, 0]], @transport.writes.last
+    end
+
     def test_write_pads_a_string_to_its_register
         inverter = Modbus::Inverter.new(transport: @transport)
         inverter.write(:c_manufacturer, "SolarEdge")

@@ -8,7 +8,9 @@ module SolarEdge
             # The inverter's registers: SunSpec Common (0x9c40) and
             # inverter model, then SolarEdge's power-control (0xf000) and
             # StorEdge settings (0xe004). From nmakel/solaredge_modbus
-            # @fd3ce7a, __init__.py:487-567.
+            # @fd3ce7a, __init__.py:487-567; the power-control rows as
+            # SolarEdge's "Power Control Protocol" technical note (v1.3,
+            # Nov. 2017) gives them.
             module Inverter
                 REGISTERS = {
                     c_id: [0x9c40, 2, :string, 1],
@@ -61,9 +63,9 @@ module SolarEdge
                     commit_power_control_settings: [0xf100, 1, :int16, 4],
                     restore_power_control_default_settings:
                         [0xf101, 1, :int16, 4],
-                    reactive_power_config: [0xf103, 2, :int32, 4],
-                    reactive_power_response_time: [0xf105, 2, :uint32, 4],
-                    advanced_power_control_enable: [0xf142, 2, :uint16, 4],
+                    reactive_power_config: [0xf104, 2, :int32, 4],
+                    reactive_power_response_time: [0xf106, 2, :uint32, 4],
+                    advanced_power_control_enable: [0xf142, 2, :int32, 4],
                     export_control_mode: [0xf700, 1, :uint16, 5],
                     export_control_limit_mode: [0xf701, 1, :uint16, 5],
                     export_control_site_limit: [0xf702, 2, :float32, 5],
@@ -78,11 +80,13 @@ module SolarEdge
                     rc_discharge_limit: [0xe010, 2, :float32, 6]
                 }.transform_values { Register.row(*it) }.freeze
 
-                # The power-control and StorEdge settings registers put
-                # their low word first; the others do not.
-                LITTLE_ENDIAN = [0xf700, 0xf701, 0xf702, 0xe004, 0xe005,
-                                 0xe006, 0xe008, 0xe00a, 0xe00b, 0xe00d,
-                                 0xe00e, 0xe010].freeze
+                # SolarEdge's own registers (0xe000 and up) put the low
+                # word of a 32-bit value first; the SunSpec block does
+                # not. Seen on an SE7600: cosphi (0xf002) holding 1.0
+                # came as 0000 3f80, energy_total as 0000 00d2
+                # (nmakel/solaredge_modbus issue 43).
+                LITTLE_ENDIAN = REGISTERS.values.map(&:address)
+                                         .select { it >= 0xe000 }.freeze
             end
         end
     end

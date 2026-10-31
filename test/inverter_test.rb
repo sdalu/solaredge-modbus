@@ -60,6 +60,29 @@ class SolarEdgeInverterTest < Minitest::Test
         assert_in_delta 1500.5, inv.read(:export_control_site_limit)
     end
 
+    # As an SE7600 sent them (nmakel/solaredge_modbus issue 43): cosphi
+    # 1.0 low word first, energy_total 210 high word first.
+    def test_solaredge_registers_low_word_first_sunspec_high
+        inv = inverter(0xf002 => 0x0000, 0xf003 => 0x3f80,
+                       0x9c9d => 0x0000, 0x9c9e => 0x00d2)
+        assert_in_delta 1.0, inv.read(:cosphi)
+        assert_equal 210, inv.read(:energy_total)
+    end
+
+    # SolarEdge's "Power Control Protocol" technical note, v1.3.
+    def test_power_control_registers_sit_where_the_note_puts_them
+        regs = Modbus::Registers::Inverter::REGISTERS
+        config = regs[:reactive_power_config]
+        assert_equal [0xf104, :int32], [config.address, config.dtype]
+        assert_equal 0xf106, regs[:reactive_power_response_time].address
+        assert_equal :int32, regs[:advanced_power_control_enable].dtype
+    end
+
+    def test_advanced_power_control_enable_is_one_32bit_value
+        inv = inverter(0xf142 => 1, 0xf143 => 0)
+        assert_equal 1, inv.read(:advanced_power_control_enable)
+    end
+
     def test_meters_skips_an_absent_meter
         assert_empty inverter({}).meters
     end

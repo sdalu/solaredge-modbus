@@ -35,6 +35,13 @@ show:
   reads `event_log_internal` one word early.
 - Writing a value its type cannot hold raises `Error`, as upstream's
   `struct.pack` does, rather than being wrapped or truncated.
+- Four power-control rows follow SolarEdge's "Power Control Protocol"
+  technical note (v1.3) and what an SE7600 sends, where upstream does
+  not: `reactive_power_config` is at 0xF104 and
+  `reactive_power_response_time` at 0xF106 (upstream: one register
+  early), `advanced_power_control_enable` is an Int32 (upstream: a
+  uint16), and `cosphi` puts its low word first, as every 32-bit
+  value from 0xE000 up does (upstream issue 43, open since 2021).
 - A value decodes to its type's Ruby class. Upstream casts each to a
   per-register Python type, which truncated `cosphi` and
   `export_control_site_limit`, both floats, to integers.
