@@ -2,52 +2,36 @@
 
 module SolarEdge
     module Modbus
-        # A SolarEdge inverter over Modbus TCP: Registers::Inverter's
-        # table (register-for-register from __init__.py:487-567 of
-        # nmakel/solaredge_modbus @fd3ce7a; see modbus.rb for the
-        # commit), plus #meters and #batteries discovery
-        # (__init__.py:583-591).
+        # A SolarEdge inverter, and the meters and batteries attached to
+        # it.
         class Inverter < Device
             REGISTERS     = Registers::Inverter::REGISTERS
             LITTLE_ENDIAN = Registers::Inverter::LITTLE_ENDIAN
 
-            # __init__.py:583-586: a meter is present when its probe
-            # register (its c_sunspec_did) holds a nonzero value. A
-            # probe the device refuses or leaves unimplemented is nil:
-            # no meter. A connection failure raises.
+            # The meters present: those whose c_sunspec_did holds a
+            # model id. A connection failure raises.
             def meters
-                found(:meter) { |v| v&.nonzero? }.to_h do |i|
-                    [:"Meter#{i + 1}", Meter.new(parent: self, offset: i)]
-                end
+                attached(Meter, :c_sunspec_did) { it&.nonzero? }
             end
 
-            # __init__.py:588-591: present unless the probe holds 255,
-            # or is nil as for #meters. (Upstream counts a failed or
-            # unimplemented probe as a battery.)
+            # The batteries present: those whose c_deviceaddress holds
+            # something other than 255.
             def batteries
-                found(:battery) { |v| v && v != 255 }.to_h do |i|
-                    [:"Battery#{i + 1}", Battery.new(parent: self, offset: i)]
-                end
+                attached(Battery, :c_deviceaddress) { it && it != 255 }
             end
 
             private
 
-            def found(kind)
-                dids(kind).each_index.select { |i| yield probe(kind, i) }
-            end
-
-            def dids(kind)
-                if kind == :meter
-                    Registers::Inverter::METER_DIDS
-                else
-                    Registers::Inverter::BATTERY_DIDS
+            def attached(kind, probe)
+                (1..kind::OFFSETS.size).filter_map do |number|
+                    device = kind.new(parent: self, number:)
+                    device if yield probe(device, probe)
                 end
             end
 
-            # nil when the device has no such register.
-            def probe(kind, index)
-                raw = read_raw(dids(kind)[index], 1, :holding)
-                Codec.decode(raw, :uint16, :int, WORDORDER)
+            # nil when the device refuses the register: none there.
+            def probe(device, key)
+                device.read(key)
             rescue ModbusException
                 nil
             end

@@ -4,9 +4,9 @@
 
 The library started from nmakel/solaredge_modbus at one commit, `fd3ce7a`,
 register for register: names, addresses, types, batches, word orders,
-and the decoding rules, including those of the pymodbus 3.5 coders it
-calls (16-bit values and strings ignore word order; a value is decoded
-over its type's width from the start of its registers). Comments cite
+and the decoding rules (16-bit values and strings ignore word order; a
+value is decoded over its type's width from the start of its
+registers). The table headers cite
 `__init__.py` line numbers at that commit, so a register can be
 checked against its source. Upstream is where the tables come from,
 not a behaviour to match.
@@ -35,6 +35,14 @@ show:
   reads `event_log_internal` one word early.
 - Writing a value its type cannot hold raises `Error`, as upstream's
   `struct.pack` does, rather than being wrapped or truncated.
+- A value decodes to its type's Ruby class. Upstream casts each to a
+  per-register Python type, which truncated `cosphi` and
+  `export_control_site_limit`, both floats, to integers.
+- Coded values are named by symbols (`:producing`), not upstream's
+  display strings (`"Producing"`). `meters` and `batteries` return
+  arrays of devices numbered from 1, not dicts keyed `"Meter1"`; a
+  device is built with `number:`, not a 0-based `offset`. Writes
+  return `nil`, not a success flag.
 
 Two departures change nothing visible: the retry loop tries the next
 attempt after a failed connect, where upstream spends an attempt

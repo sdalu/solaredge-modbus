@@ -2,13 +2,9 @@
 
 require "test_helper"
 
-# Device's generic machinery (__init__.py:189-458 of nmakel/
-# solaredge_modbus @fd3ce7a; see modbus.rb): read, batched read_all,
-# write, retries. Exercised through a tiny made-up register table
-# (constructed here, not from any real device, to keep the fixtures
-# small) over a fake transport that never opens a socket; Inverter/
-# Meter/Battery/StorEdge's own real tables are exercised in their own
-# test files.
+# Device's machinery: read, batched read_all, write, retries, through a
+# small made-up register table over a fake transport that never opens
+# a socket. The real tables are exercised in their own test files.
 class SolarEdgeDeviceTest < Minitest::Test
     Modbus   = SolarEdge::Modbus
     Register = Modbus::Register
@@ -19,12 +15,9 @@ class SolarEdgeDeviceTest < Minitest::Test
     # make exactly one Modbus request per batch, not per register.
     class Toy < SolarEdge::Modbus::Device
         REGISTERS = {
-            a: Register.new(address: 0x10, length: 1, rtype: :holding,
-                            dtype: :uint16, vtype: :int, batch: 1),
-            b: Register.new(address: 0x20, length: 1, rtype: :holding,
-                            dtype: :uint16, vtype: :int, batch: 2),
-            c: Register.new(address: 0x21, length: 1, rtype: :holding,
-                            dtype: :int16, vtype: :int, batch: 2)
+            a: Register.new(address: 0x10, length: 1, dtype: :uint16, batch: 1),
+            b: Register.new(address: 0x20, length: 1, dtype: :uint16, batch: 2),
+            c: Register.new(address: 0x21, length: 1, dtype: :int16, batch: 2)
         }.freeze
     end
 
@@ -46,7 +39,7 @@ class SolarEdgeDeviceTest < Minitest::Test
         def connect = @connected = true
         def close = @connected = false
 
-        def read_registers(_rtype, _unit, address, length)
+        def read_registers(_type, _unit, address, length)
             @reads << [address, length]
             raise Error, "solaredge: simulated failure" if consume_failure?
             raise Modbus::ModbusException.new(2, 3) if @refused == address
@@ -121,7 +114,7 @@ class SolarEdgeDeviceTest < Minitest::Test
     end
 
     def test_write_encodes_and_calls_the_transport
-        assert @device.write(:a, 99)
+        assert_nil @device.write(:a, 99)
         assert_equal [[0x10, [99]]], @transport.writes
     end
 

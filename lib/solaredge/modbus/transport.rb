@@ -4,21 +4,13 @@ require "socket"
 
 module SolarEdge
     module Modbus
-        # Modbus TCP framing over a real TCPSocket: the MBAP header
-        # (pymodbus-dev/pymodbus framer/socket.py, dev branch, fetched
-        # 2026-10-30 -- "[ MBAP Header ][ Function Code][ Data ]
-        # [tid 2b][pid 2b][length 2b][uid 1b]", length = uid + function
-        # code + data) wraps a PDU of function code 3 (Read Holding
-        # Registers), 4 (Read Input Registers) or 16 (Write Multiple
-        # Registers): the only codes pymodbus's ModbusTcpClient issues
-        # for read_holding_registers/read_input_registers/
-        # write_registers, which is all nmakel/solaredge_modbus ever
-        # calls. Request/response layout and the exception response
-        # (function code | 0x80, one exception-code byte): pymodbus-dev/
-        # pymodbus pdu/register_message.py and pdu/exceptionresponse.py,
-        # same fetch. Device holds the injectable seam (a Transport, or
-        # any object answering to the same four methods); tests use a
-        # fake one and never open a socket.
+        # Modbus TCP over a socket: each request is an MBAP header
+        # (transaction id, protocol 0, length, unit) and a PDU of
+        # function code 3 (read holding registers), 4 (read input
+        # registers) or 16 (write multiple registers). Frame builds and
+        # checks the PDUs. Device takes any object answering the same
+        # five methods (connected?, connect, close, read_registers,
+        # write_registers), which is how the tests run without one.
         #
         # A reply is taken only if it answers the request just sent: its
         # transaction id, protocol (0) and unit must match, and it must
@@ -63,14 +55,12 @@ module SolarEdge
                 end
             end
 
-            # Named after pymodbus's own write_registers, not a
-            # predicate: true, or an Error raised.
-            # rubocop:disable-next Naming/PredicateMethod
+            # nil once the device confirms the write; raises otherwise.
             def write_registers(unit, address, values)
                 exchange(unit, Frame.write_request(address, values)) do |pdu|
                     Frame.confirm_write(pdu, address, values.size)
                 end
-                true
+                nil
             end
 
             private

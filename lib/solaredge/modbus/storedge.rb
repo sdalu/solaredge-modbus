@@ -2,11 +2,8 @@
 
 module SolarEdge
     module Modbus
-        # An inverter's StorEdge (battery-system) settings,
-        # __init__.py:694-717 of nmakel/solaredge_modbus @fd3ce7a (see
-        # modbus.rb for the commit): Registers::StorEdge's table, no
-        # per-instance offset, wordorder LITTLE throughout
-        # (self.wordorder = Endian.LITTLE, __init__.py:698).
+        # An inverter's StorEdge (battery system) settings. Its 32-bit
+        # values put their low word first.
         class StorEdge < Device
             REGISTERS = Registers::StorEdge::REGISTERS
             WORDORDER = :little

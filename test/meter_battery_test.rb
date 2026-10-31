@@ -2,9 +2,8 @@
 
 require "test_helper"
 
-# Shared by this file's three test classes: answers from a register
-# image (address => raw 16-bit word) built in each test, never a
-# socket.
+# Shared by this file's test classes: answers from a register image
+# (address => raw 16-bit word) built in each test, never a socket.
 class SolarEdgeFakeTransport
     def initialize(image)
         @image = image
@@ -15,105 +14,85 @@ class SolarEdgeFakeTransport
     def connect = @connected = true
     def close = @connected = false
 
-    def read_registers(_rtype, _unit, address, length)
+    def read_registers(_type, _unit, address, length)
         (address...(address + length)).map { |a| @image.fetch(a) }
     end
 end
 
-# Meter, __init__.py:593-692 of nmakel/solaredge_modbus @fd3ce7a (see
-# modbus.rb): Registers::Meter's table with the instance offset
-# added, wordorder BIG (Device's default, unchanged by Meter).
+# Meter: meter 1's table, the others at Meter::OFFSETS from it.
 class SolarEdgeMeterTest < Minitest::Test
     Modbus = SolarEdge::Modbus
 
-    def meter(offset, image)
-        transport = SolarEdgeFakeTransport.new(image)
-        Modbus::Meter.new(offset:, transport:)
+    def meter(number, image)
+        Modbus::Meter.new(number:, transport: SolarEdgeFakeTransport.new(image))
     end
 
-    # power, Meter2 (offset Constants::METER_REGISTER_OFFSETS[1] ==
-    # 0xae): base address 0x9d0e + 0xae = 0x9dbc.
-    def test_offset_1_shifts_every_address_by_0xae
-        m = meter(1, 0x9dbc => 1200)
-        assert_equal 1200, m.read(:power)
-    end
-
-    def test_an_offset_past_meter_3_is_refused
-        assert_raises(IndexError) { meter(3, {}) }
-    end
-
-    def test_offset_0_is_the_unshifted_table
-        m = meter(0, 0x9d0e => 500)
+    def test_meter_1_is_the_unshifted_table
+        m = meter(1, 0x9d0e => 500)
         assert_equal 500, m.read(:power)
+        assert_equal 1, m.number
+    end
+
+    # power: 0x9d0e + 0xae.
+    def test_meter_2_shifts_every_address_by_0xae
+        assert_equal 1200, meter(2, 0x9dbc => 1200).read(:power)
+    end
+
+    def test_a_meter_number_out_of_range_is_refused
+        assert_raises(ArgumentError) { meter(0, {}) }
+        assert_raises(ArgumentError) { meter(4, {}) }
     end
 end
 
-# Battery, __init__.py:719-763 (see modbus.rb): Registers::Battery's
-# table with the instance offset added, wordorder LITTLE throughout
-# (self.wordorder = Endian.LITTLE, __init__.py:723 -- the whole class,
-# not just some registers, unlike Inverter's little_endian_registers).
+# Battery: battery 1's table, the other at 0x100; low word first.
 class SolarEdgeBatteryTest < Minitest::Test
     Modbus = SolarEdge::Modbus
 
-    # rated_energy (0xe142, sefloat, 2 registers) = 25.0 (IEEE 754
-    # 0x41c80000). Wordorder LITTLE means the *wire* register order is
-    # reversed from the natural big-endian [0x41c8, 0x0000], so the
-    # fixture stores [0x0000, 0x41c8] at [0xe142, 0xe143].
-    def test_wordorder_is_little_for_every_register
-        transport = SolarEdgeFakeTransport.new(0xe142 => 0x0000,
-                                               0xe143 => 0x41c8)
-        battery = Modbus::Battery.new(offset: 0, transport:)
-        assert_in_delta 25.0, battery.read(:rated_energy)
+    def battery(number, image)
+        Modbus::Battery.new(number:,
+                            transport: SolarEdgeFakeTransport.new(image))
     end
 
-    # Battery2: offset Constants::BATTERY_REGISTER_OFFSETS[1] == 0x100.
-    def test_offset_1_shifts_every_address_by_0x100
-        transport = SolarEdgeFakeTransport.new(0xe242 => 0x0000,
-                                               0xe243 => 0x41c8)
-        battery = Modbus::Battery.new(offset: 1, transport:)
-        assert_in_delta 25.0, battery.read(:rated_energy)
+    # rated_energy (0xe142, sefloat) = 25.0, IEEE 754 0x41c80000, its
+    # low word first on the wire.
+    def test_a_32bit_value_has_its_low_word_first
+        assert_in_delta 25.0, battery(1, 0xe142 => 0, 0xe143 => 0x41c8)
+            .read(:rated_energy)
+    end
+
+    def test_battery_2_shifts_every_address_by_0x100
+        assert_in_delta 25.0, battery(2, 0xe242 => 0, 0xe243 => 0x41c8)
+            .read(:rated_energy)
     end
 
     def test_strings_ignore_the_wordorder
         regs = "LG Chem".b.ljust(32, "\x00").unpack("n*")
         image = regs.each_with_index.to_h { |w, i| [0xe100 + i, w] }
-        battery = SolarEdge::Modbus::Battery.new(
-            offset: 0, transport: SolarEdgeFakeTransport.new(image)
-        )
-        assert_equal "LG Chem", battery.read(:c_manufacturer)
+        assert_equal "LG Chem", battery(1, image).read(:c_manufacturer)
     end
 
     # event_log is a uint16 over two registers: its first. In read_all
-    # the next register, event_log_internal, is read at its own address
-    # (upstream's decoder would be a word early there).
+    # the next register, event_log_internal, is read at its own address.
     def test_event_logs_read_their_own_first_register
         image = (0xe100..0xe193).to_h { [it, 0] }
         image.merge!(0xe18a => 1, 0xe18b => 2, 0xe191 => 17, 0xe192 => 34)
-        battery = SolarEdge::Modbus::Battery.new(
-            offset: 0, transport: SolarEdgeFakeTransport.new(image)
-        )
-        assert_equal 1, battery.read(:event_log)
-        all = battery.read_all
+        b = battery(1, image)
+        assert_equal 1, b.read(:event_log)
+        all = b.read_all
         assert_equal [1, 34], all.values_at(:event_log, :event_log_internal)
     end
 
-    def test_an_offset_past_battery_2_is_refused
-        transport = SolarEdgeFakeTransport.new({})
-        assert_raises(IndexError) do
-            SolarEdge::Modbus::Battery.new(offset: 2, transport:)
-        end
+    def test_a_battery_number_out_of_range_is_refused
+        assert_raises(ArgumentError) { battery(3, {}) }
     end
 end
 
-# StorEdge, __init__.py:694-717 (see modbus.rb): no per-instance
-# offset, wordorder LITTLE (self.wordorder = Endian.LITTLE,
-# __init__.py:698).
+# StorEdge: one table, low word first.
 class SolarEdgeStorEdgeTest < Minitest::Test
-    Modbus = SolarEdge::Modbus
-
-    def test_reads_a_setting_with_wordorder_little
-        transport = SolarEdgeFakeTransport.new(0xe000 => 1)
-        storedge = Modbus::StorEdge.new(transport:)
+    def test_reads_a_setting
+        storedge = SolarEdge::Modbus::StorEdge.new(
+            transport: SolarEdgeFakeTransport.new(0xe000 => 1)
+        )
         assert_equal 1, storedge.read(:export_control_mode)
     end
 end

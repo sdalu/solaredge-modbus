@@ -3,25 +3,16 @@
 module SolarEdge
     module Modbus
         # Decodes/encodes one register value from/to a run of raw 16-bit
-        # Modbus words, per __init__.py:297-349 of nmakel/
-        # solaredge_modbus @fd3ce7a (_encode_value/_decode_value; see
-        # modbus.rb for the commit) and the pymodbus 3.5 payload
-        # coders it calls (upstream's setup.cfg pins pymodbus ~= 3.5.0).
-        # byteorder is always big-endian (each register's own two bytes,
-        # standard Modbus). wordorder only changes which register comes
-        # first in a 32- or 64-bit value: pymodbus's 16-bit and string
-        # coders never look at it.
-        #
-        # A register holding SunSpec's "not implemented" value decodes
-        # to nil (upstream returns 0, 0.0 or "False", which a real zero
-        # cannot be told from).
+        # Modbus words. Each register's two bytes are big-endian
+        # (standard Modbus); wordorder only says which register comes
+        # first in a 32- or 64-bit value, and strings and 16-bit values
+        # ignore it. A register holding SunSpec's "not implemented"
+        # value decodes to nil.
         module Codec
-            # SunSpec's "not implemented" values, __init__.py:79-90, as
-            # bit patterns: a signed register is compared by its raw
-            # bits, so int16 0x8000 is caught. (Upstream compares the
-            # signed value, -32768, with 0x8000 and never matches.)
-            # Floats have none here: both of theirs are NaN patterns,
-            # and any NaN counts.
+            # SunSpec's "not implemented" values, as bit patterns: a
+            # signed register is compared by its raw bits (int16 0x8000,
+            # not -32768). Floats have none here: theirs are NaN
+            # patterns, and any NaN counts.
             NOT_IMPLEMENTED = {
                 uint16: 0xffff, uint32: 0xffffffff,
                 uint64: 0xffffffffffffffff, int16: 0x8000, scale: 0x8000,
@@ -43,13 +34,13 @@ module SolarEdge
                      acc32: "N", int32: "N", uint64: "Q>" }.freeze
 
             # Registers each dtype decodes, from the start of what was
-            # read: pymodbus's decoders take their own width, whatever
-            # the table's length (battery event_log is a uint16 over 2).
+            # read, whatever the table's length (battery event_log is a
+            # uint16 over 2).
             WIDTHS = { uint16: 1, int16: 1, scale: 1, uint32: 2, acc32: 2,
                        int32: 2, float32: 2, sefloat: 2, uint64: 4 }.freeze
 
-            # What struct.pack accepts for each integer format; out of
-            # range, it raises rather than wrapping.
+            # What each integer dtype can hold; encode refuses anything
+            # else rather than wrapping it.
             RANGES = { uint16: 0..0xffff, int16: -0x8000..0x7fff,
                        scale: -0x8000..0x7fff, uint32: 0..0xffffffff,
                        int32: -0x80000000..0x7fffffff,
@@ -57,17 +48,17 @@ module SolarEdge
 
             FLOAT32_MAX = 3.4028234663852886e38
 
-            # _encode_value's if/elif chain, __init__.py:300-319: no
-            # ACC32 branch there (an accumulator is read-only in
-            # practice), so FORMATS minus :acc32.
+            # An accumulator is read-only.
             ENCODE_FORMATS = FORMATS.except(:acc32).freeze
 
             module_function
 
-            def decode(registers, dtype, vtype, wordorder)
+            # An Integer, a Float or a String by dtype; nil when not
+            # implemented.
+            def decode(registers, dtype, wordorder)
                 bytes = bytes_of(registers, dtype, wordorder)
                 return if not_implemented?(bytes, dtype)
-                cast(raw_value(bytes, dtype), vtype)
+                raw_value(bytes, dtype)
             end
 
             def encode(value, dtype, wordorder)
@@ -89,8 +80,7 @@ module SolarEdge
                 bytes.unpack1(FORMATS.fetch(dtype))
             end
 
-            # decode_string, __init__.py:339: utf-8, invalid bytes
-            # dropped (Python's errors="ignore"), NULs and trailing
+            # UTF-8 with invalid bytes dropped, NULs and trailing
             # whitespace stripped.
             def decode_string(bytes)
                 bytes.dup.force_encoding("UTF-8").scrub("")
@@ -103,14 +93,7 @@ module SolarEdge
                 bytes.unpack1(BITS.fetch(dtype)) == NOT_IMPLEMENTED[dtype]
             end
 
-            def cast(raw, vtype)
-                return raw.to_i if vtype == :int
-                return raw.to_f if vtype == :float
-                raw
-            end
-
-            # add_string packs the bytes as they are; to_registers pads
-            # an odd count with a NUL.
+            # The bytes as they are, an odd count padded with a NUL.
             def encode_string(value)
                 bytes = value.to_s.b
                 bytes << "\x00" if bytes.bytesize.odd?
@@ -126,8 +109,8 @@ module SolarEdge
                 raise Error, "solaredge: #{value.inspect} is not a #{dtype}"
             end
 
-            # struct.pack("f") takes any real number and infinities, but
-            # refuses a finite value past float32's range.
+            # Any real number, infinities and NaN included, short of a
+            # finite value past float32's range.
             def check_float(value)
                 fits = value.is_a?(Numeric) && !value.is_a?(Complex) &&
                        !(value.finite? && value.abs > FLOAT32_MAX)

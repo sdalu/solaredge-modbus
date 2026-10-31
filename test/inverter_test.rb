@@ -2,11 +2,9 @@
 
 require "test_helper"
 
-# Inverter: Registers::Inverter's table (__init__.py:487-567 of nmakel/
-# solaredge_modbus @fd3ce7a; see modbus.rb) and #meters/#batteries
-# discovery (__init__.py:583-591). The register image below is built
-# address by address in the test -- constructed, not recorded from any
-# device -- over a fake transport that never opens a socket.
+# Inverter: its table and #meters/#batteries discovery, over a register
+# image built address by address in each test (not recorded from a
+# device) and a fake transport that never opens a socket.
 class SolarEdgeInverterTest < Minitest::Test
     Modbus = SolarEdge::Modbus
     Error  = Modbus::Error
@@ -28,7 +26,7 @@ class SolarEdgeInverterTest < Minitest::Test
         def connect = @connected = true
         def close = @connected = false
 
-        def read_registers(_rtype, _unit, address, length)
+        def read_registers(_type, _unit, address, length)
             @reads << [address, length]
             (address...(address + length)).map do |a|
                 @image.fetch(a) { raise Modbus::ModbusException.new(2, 3) }
@@ -55,33 +53,35 @@ class SolarEdgeInverterTest < Minitest::Test
         assert_equal(-1, inv.read(:power_ac_scale))
     end
 
+    # export_control_site_limit is a float32 with its low word first:
+    # 1500.5 (0x44bb9000) comes back whole, not truncated to 1500.
+    def test_a_float_register_reads_as_a_float
+        inv = inverter(0xf702 => 0x9000, 0xf703 => 0x44bb)
+        assert_in_delta 1500.5, inv.read(:export_control_site_limit)
+    end
+
     def test_meters_skips_an_absent_meter
         assert_empty inverter({}).meters
     end
 
-    # A nonzero probe (here 203, SunSpec DID 203: Wye 3P1N Three Phase
-    # Meter -- Constants::SUNSPEC_DID[:wye_three_phase_meter]) means
-    # the meter is attached; Meter2's addresses carry its instance
-    # offset (Constants::METER_REGISTER_OFFSETS[1] == 0xae).
+    # A meter is attached when its c_sunspec_did holds a model id (203,
+    # a wye three-phase meter); meter 2's addresses are offset by 0xae.
     def test_meters_finds_an_attached_meter_and_offsets_its_addresses
-        inv = inverter(0x9cfc => 0, 0x9daa => 203, 0x9e58 => 0)
-        meters = inv.meters
-        assert_equal [:Meter2], meters.keys
+        meters = inverter(0x9cfc => 0, 0x9daa => 203, 0x9e58 => 0).meters
+        assert_equal [2], meters.map(&:number)
         base = Modbus::Registers::Meter::REGISTERS.fetch(:c_manufacturer)
-        offset = Modbus::Constants::METER_REGISTER_OFFSETS[1]
-        meter2 = meters.fetch(:Meter2).registers.fetch(:c_manufacturer)
-        assert_equal base.address + offset, meter2.address
+        assert_equal base.address + 0xae,
+                     meters.first.registers.fetch(:c_manufacturer).address
     end
 
-    # Meter 3's probe is its c_sunspec_did, 0x9cfc + 0x15c (upstream
-    # probes one past it).
+    # Meter 3's probe is its c_sunspec_did, 0x9cfc + 0x15c.
     def test_meters_probes_meter3_at_its_sunspec_did
         inv = inverter(0x9cfc => 0, 0x9daa => 0, 0x9e58 => 203)
-        assert_equal [:Meter3], inv.meters.keys
+        assert_equal [3], inv.meters.map(&:number)
     end
 
     # A probe the device refuses (its address absent from the image)
-    # or leaves unimplemented is no battery; upstream counts both.
+    # or leaves unimplemented is no battery.
     def test_batteries_skips_a_refused_or_unimplemented_probe
         assert_empty inverter({}).batteries
         assert_empty inverter(0xe140 => 0xffff, 0xe240 => 0xffff).batteries
@@ -89,12 +89,11 @@ class SolarEdgeInverterTest < Minitest::Test
 
     def test_batteries_excludes_the_sentinel255
         inv = inverter(0xe140 => 255, 0xe240 => 1)
-        assert_equal [:Battery2], inv.batteries.keys
+        assert_equal [2], inv.batteries.map(&:number)
     end
 
     def test_discovered_devices_share_the_inverters_transport
         inv = inverter(0x9cfc => 203)
-        meter = inv.meters.fetch(:Meter1)
-        assert_same inv.transport, meter.transport
+        assert_same inv.transport, inv.meters.first.transport
     end
 end

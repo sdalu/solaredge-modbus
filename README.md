@@ -5,7 +5,7 @@ itself, the meters and batteries attached to it, and its StorEdge
 settings, through the SunSpec registers SolarEdge exposes. A Ruby port
 of [nmakel/solaredge_modbus](https://github.com/nmakel/solaredge_modbus)
 at commit `fd3ce7a` (2025-01-08): same register tables, same names, same
-decoding, without upstream's bugs (DESIGN.md lists them).
+decoding, without its bugs (DESIGN.md lists where it departs).
 
 It needs only Ruby's standard library (Ruby 3.4).
 
@@ -17,27 +17,33 @@ require "solaredge/modbus"
 inverter = SolarEdge::Modbus::Inverter.new(host: "192.168.1.30",
                                            port: 1502)
 begin
+    status = SolarEdge::Modbus::Constants::INVERTER_STATUS
+             .key(inverter.read(:status))
     power = inverter.read(:power_ac) * 10.0**inverter.read(:power_ac_scale)
-    puts "status #{inverter.read(:status)}, #{power} W"
+    puts "#{status}, #{power} W"
 
     inverter.read_all.each { |name, value| puts "#{name}: #{value}" }
 
-    inverter.meters.each do |name, meter|
+    inverter.meters.each do |meter|
         net = meter.read(:power) * 10.0**meter.read(:power_scale)
-        puts "#{name}: #{net} W at the grid connection"
+        puts "meter #{meter.number}: #{net} W at the grid connection"
     end
-    inverter.batteries.each { |name, b| puts "#{name}: #{b.read(:soe)} %" }
+    inverter.batteries.each do |battery|
+        puts "battery #{battery.number}: #{battery.read(:soe)} %"
+    end
 ensure
     inverter.disconnect
 end
 ```
 
-- `Device#read(name)` reads one register and decodes it; `read_all`
-  reads every register in as few requests as upstream's batches allow
-  and returns `{ name => value }`. Register names are upstream's: see
-  `lib/solaredge/modbus/registers/`.
+- `Device#read(name)` reads one register and decodes it to an Integer,
+  a Float or a String by its type; `read_all` reads every register,
+  one request per batch of neighbours, and returns `{ name => value }`.
+  The names are in `lib/solaredge/modbus/registers/`.
 - Values are raw: a quantity and its `_scale` register are read
-  separately, and the value is `quantity * 10**scale`.
+  separately, and the value is `quantity * 10**scale`. A coded value
+  (a status, a mode) is named by `Constants`: `INVERTER_STATUS.key(4)`
+  is `:producing`.
 - A register holding SunSpec's "not implemented" value (0xffff for a
   uint16, 0x8000 for an int16 or scale factor, NaN for a float, 0 for
   an `acc32` counter, an empty string) decodes to `nil`, so check a
@@ -52,20 +58,22 @@ end
 - `read_all` leaves out a batch the device answers with an exception
   reply (registers it does not have) and raises on any other failure.
 - An unknown register name raises `Error`.
-- `Device#write(name, value)` encodes and writes one register, and
-  raises `Error` for a value its type cannot hold (an Integer in range
-  for integer registers, a number within float32 for float ones).
+- `Device#write(name, value)` encodes and writes one register and
+  returns `nil`; it raises `Error` for a value its type cannot hold (an
+  Integer in range for integer registers, a number within float32 for
+  float ones).
   Nothing here has been written to a real inverter: writes are checked
   only against the framing tests.
 - A device connects on its first read and stays connected until
-  `disconnect`. `Inverter#meters` and `#batteries` share the
-  inverter's connection.
-- `Meter.new(offset: 0..2, host:, port:)` (another offset raises
-  `IndexError`), `Battery.new(offset: 0..1,
-  …)` and `StorEdge.new(…)` build a device directly; `transport:` takes
-  any object answering `connected?`, `connect`, `close`,
-  `read_registers` and `write_registers`, which is how the tests run
-  without a socket.
+  `disconnect`. `Inverter#meters` and `#batteries` return the devices
+  present, each with its `number` (from 1), sharing the inverter's
+  connection.
+- `Meter.new(number: 1..3, host:, port:)`, `Battery.new(number: 1..2,
+  …)` and `StorEdge.new(…)` build a device directly (a number out of
+  range raises `ArgumentError`); `parent:` shares another device's
+  connection, and `transport:` takes any object answering
+  `connected?`, `connect`, `close`, `read_registers` and
+  `write_registers`, which is how the tests run without a socket.
 
 ## Known shortfalls
 

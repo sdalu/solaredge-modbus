@@ -4,14 +4,10 @@ require "socket"
 
 require "test_helper"
 
-# Transport's MBAP framing, checked against a real TCP server on
-# 127.0.0.1 (a loopback test double standing in for "a device" --
-# never the network, never the real inverter) speaking the exact bytes
-# the sources cited in transport.rb document: the MBAP
-# header from pymodbus-dev/pymodbus framer/socket.py (dev branch), the
-# PDU layout from pymodbus-dev/pymodbus pdu/register_message.py and
-# pdu/exceptionresponse.py (both fetched 2026-10-30; see transport.rb's
-# header comment for the exact citation).
+# Transport's Modbus TCP framing, checked byte for byte against a
+# one-shot TCP server on 127.0.0.1 (never the network, never the
+# inverter): the MBAP header, the read and write PDUs, and the
+# exception reply.
 class SolarEdgeTransportTest < Minitest::Test
     Transport = SolarEdge::Modbus::Transport
     Error     = SolarEdge::Modbus::Error
@@ -28,7 +24,7 @@ class SolarEdgeTransportTest < Minitest::Test
         request = serve_write do |transport|
             transport.write_registers(1, 0x20, [9, 10])
         end
-        assert @result
+        assert_nil @result
         assert_equal write_request(0x20, [9, 10]), request
     end
 
