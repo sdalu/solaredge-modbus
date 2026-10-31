@@ -10,9 +10,9 @@ Ruby style: the `ruby` skill (4-space indentation, double quotes,
 
 ## Traps
 
-- This is a port of nmakel/solaredge_modbus @fd3ce7a that fixes
-  upstream's bugs rather than reproducing them. Each departure goes in
-  DESIGN.md's list: it is what a comparison with upstream will show.
+- It started as a port of nmakel/solaredge_modbus @fd3ce7a, but
+  upstream is not a contract: diverge where it is wrong or awkward,
+  and add the departure to DESIGN.md's list.
 - Never write to a real inverter as a check: the writable registers
   change export limits, power control and battery modes. Tests use a
   fake transport.

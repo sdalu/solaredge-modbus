@@ -1,17 +1,19 @@
 # Design
 
-## A port, not a rewrite
+## Grown from a port
 
-The library follows nmakel/solaredge_modbus at one commit, `fd3ce7a`,
+The library started from nmakel/solaredge_modbus at one commit, `fd3ce7a`,
 register for register: names, addresses, types, batches, word orders,
 and the decoding rules, including those of the pymodbus 3.5 coders it
 calls (16-bit values and strings ignore word order; a value is decoded
 over its type's width from the start of its registers). Comments cite
 `__init__.py` line numbers at that commit, so a register can be
-checked against its source.
+checked against its source. Upstream is where the tables come from,
+not a behaviour to match.
 
-Where upstream is wrong, this is not. Each departure is one a
-comparison with upstream's output will show:
+It departs from upstream wherever upstream is wrong or awkward. The
+departures so far, each one a comparison with upstream's output will
+show:
 
 - A signed register (int16, scale factor, int32) holding SunSpec's
   "not implemented" pattern reads 0. Upstream compares the signed
