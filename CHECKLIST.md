@@ -14,7 +14,7 @@
 - [ ] `DESIGN.md`: did this round depart further from upstream, or make
   a choice it should record?
 - [ ] A register or rule changed: does its comment still cite
-  `__init__.py` at `fd3ce7a`, or say why it differs?
+  upstream's __init__.py at fd3ce7a, or say why it differs?
 
 ## Release
 

@@ -110,3 +110,52 @@ class SolarEdgeTransportTest < Minitest::Test
         [1, 0, pdu.bytesize + 1, 1].pack("nnnC") + pdu
     end
 end
+
+# A device that hangs up mid-reply or never answers: each is an Error,
+# never a hang or a half-read frame.
+class SolarEdgeTransportFailureTest < Minitest::Test
+    Transport = SolarEdge::Modbus::Transport
+    Error     = SolarEdge::Modbus::Error
+
+    # Half an MBAP header, then the server hangs up.
+    def test_a_reply_cut_short_raises_and_closes
+        with_server do |server, port|
+            thread = Thread.new { hang_up(server, "\x00\x01\x00") }
+            transport = Transport.new("127.0.0.1", port)
+            error = assert_raises(Error) do
+                transport.read_registers(:holding, 1, 0, 1)
+            end
+            assert_match(/connection closed/, error.message)
+            refute_predicate transport, :connected?
+            thread.value
+        end
+    end
+
+    def test_a_silent_device_times_out
+        with_server do |server, port|
+            thread = Thread.new { server.accept }
+            transport = Transport.new("127.0.0.1", port, timeout: 0.2)
+            error = assert_raises(Error) do
+                transport.read_registers(:holding, 1, 0, 1)
+            end
+            assert_match(/timed out/, error.message)
+            thread.value.close
+        end
+    end
+
+    private
+
+    def with_server
+        server = TCPServer.new("127.0.0.1", 0)
+        yield(server, server.addr[1])
+    ensure
+        server.close
+    end
+
+    def hang_up(server, partial)
+        conn = server.accept
+        conn.recv(1024)
+        conn.write(partial)
+        conn.close
+    end
+end

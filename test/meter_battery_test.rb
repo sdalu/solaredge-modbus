@@ -38,6 +38,10 @@ class SolarEdgeMeterTest < Minitest::Test
         assert_equal 1200, m.read(:power)
     end
 
+    def test_an_offset_past_meter_3_is_refused
+        assert_raises(IndexError) { meter(3, {}) }
+    end
+
     def test_offset_0_is_the_unshifted_table
         m = meter(0, 0x9d0e => 500)
         assert_equal 500, m.read(:power)
@@ -68,6 +72,13 @@ class SolarEdgeBatteryTest < Minitest::Test
                                                0xe243 => 0x41c8)
         battery = Modbus::Battery.new(offset: 1, transport:)
         assert_in_delta 25.0, battery.read(:rated_energy)
+    end
+
+    def test_an_offset_past_battery_2_is_refused
+        transport = SolarEdgeFakeTransport.new({})
+        assert_raises(IndexError) do
+            SolarEdge::Modbus::Battery.new(offset: 2, transport:)
+        end
     end
 end
 

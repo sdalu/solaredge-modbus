@@ -40,16 +40,20 @@ end
   separately, and the value is `quantity * 10**scale`.
 - A register the device marks as not implemented decodes to `0`, `0.0`
   or the string `"False"` (upstream's `vtype(False)`).
-- A read that fails three times returns `false`; it does not raise.
-  Connection and protocol failures inside a try are
-  `SolarEdge::Modbus::Error`.
+- `read` and `read_all` try three times, reconnecting as needed; a
+  read that still fails returns `false` (`read_all` leaves the batch
+  out) rather than raising. `write` and the transport itself raise
+  `SolarEdge::Modbus::Error`: refused connection, Modbus exception
+  reply, a device that hangs up mid-reply or stays silent past its
+  timeout (3 s). An unknown register name raises it too.
 - `Device#write(name, value)` encodes and writes one register. Nothing
   here has been written to a real inverter: writes are checked only
   against the framing tests.
 - A device connects on its first read and stays connected until
   `disconnect`. `Inverter#meters` and `#batteries` share the
   inverter's connection.
-- `Meter.new(offset: 0..2, host:, port:)`, `Battery.new(offset: 0..1,
+- `Meter.new(offset: 0..2, host:, port:)` (another offset raises
+  `IndexError`), `Battery.new(offset: 0..1,
   …)` and `StorEdge.new(…)` build a device directly; `transport:` takes
   any object answering `connected?`, `connect`, `close`,
   `read_registers` and `write_registers`, which is how the tests run
@@ -67,8 +71,8 @@ end
 - Upstream's quirks are kept, not fixed: an `acc32` of exactly 0 reads
   as "not implemented" (0), a battery probe that fails counts as a
   battery present, and meter 3's probe address is one past the pattern.
-- No command-line tool yet. nmakel's package has one
-  (`solaredge-modbus --json`) that casper still calls.
+- No command-line tool. nmakel's package has one
+  (`solaredge-modbus --json`); this gem does not.
 
 ## Licence
 

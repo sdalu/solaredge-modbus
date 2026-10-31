@@ -104,6 +104,20 @@ class SolarEdgeDeviceTest < Minitest::Test
         assert_equal [[0x10, [99]]], @transport.writes
     end
 
+    def test_write_refuses_an_unknown_key
+        assert_raises(Error) { @device.write(:nope, 1) }
+        assert_empty @transport.writes
+    end
+
+    def test_connects_on_first_read_and_stays_until_disconnect
+        refute_predicate @device, :connected?
+        @device.read(:a)
+        @device.read(:b)
+        assert_predicate @device, :connected?
+        @device.disconnect
+        refute_predicate @device, :connected?
+    end
+
     def test_a_parent_shares_its_transport_and_unit
         child = Toy.new(parent: @device)
         assert_same @transport, child.transport

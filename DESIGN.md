@@ -38,10 +38,3 @@ taking on `rmodbus`, whose client is shaped around slaves and which
 would add a dependency for no new capability. The transport is
 injected (`transport:`), so every device test runs on a register image
 in memory.
-
-## Extracted from ClimatControl
-
-The code was written inside ClimatControl as `ClimatControl::SolarEdge`
-(its energy provider reads production and the meter's net power from
-it) and moved here unchanged except for the namespace, so that MadHouse,
-through casper, can drop the Python package.
