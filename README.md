@@ -54,14 +54,16 @@ end
   one not whole within the timeout (3 s from the request). Each closes
   the connection. A device's exception reply raises
   `SolarEdge::Modbus::ModbusException` (an `Error`, with `code` and
-  `function`) at once, as another try would get the same answer.
+  `function`) at once, as another try would get the same answer, and
+  leaves the connection open.
 - `read_all` leaves out a batch the device answers with an exception
   reply (registers it does not have) and raises on any other failure.
 - An unknown register name raises `Error`.
 - `Device#write(name, value)` encodes and writes one register and
   returns `nil`; it raises `Error` for a value its type cannot hold (an
   Integer in range for integer registers, a number within float32 for
-  float ones).
+  float ones), or for one longer than its register. A string is padded
+  with NULs to its register's length.
   Nothing here has been written to a real inverter: writes are checked
   only against the framing tests.
 - A device connects on its first read and stays connected until

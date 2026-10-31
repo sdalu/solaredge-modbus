@@ -51,6 +51,19 @@ class SolarEdgeTransportReplyTest < Minitest::Test
         end
     end
 
+    # An exception reply is a whole answer: the next request goes on
+    # the same connection.
+    def test_an_exception_reply_keeps_the_connection
+        refused = "\x83\x02"
+        device(answer_each(refused, read_pdu([7]))) do |transport|
+            assert_raises(SolarEdge::Modbus::ModbusException) do
+                read_one(transport)
+            end
+            assert_predicate transport, :connected?
+            assert_equal [7], read_one(transport)
+        end
+    end
+
     def test_a_reply_to_another_transaction_is_refused
         device(answer(read_pdu([7]), tid: 99)) do |transport|
             assert_refused(transport, /reply 99/)

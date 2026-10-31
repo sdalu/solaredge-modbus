@@ -123,6 +123,20 @@ class SolarEdgeDeviceTest < Minitest::Test
         assert_empty @transport.writes
     end
 
+    def test_write_refuses_a_value_longer_than_its_register
+        inverter = Modbus::Inverter.new(transport: @transport)
+        assert_raises(Error) { inverter.write(:c_manufacturer, "S" * 33) }
+        assert_empty @transport.writes
+    end
+
+    def test_write_pads_a_string_to_its_register
+        inverter = Modbus::Inverter.new(transport: @transport)
+        inverter.write(:c_manufacturer, "SolarEdge")
+        address, words = @transport.writes.last
+        assert_equal [0x9c44, 16], [address, words.size]
+        assert_equal "SolarEdge", words.pack("n*").delete("\0")
+    end
+
     def test_connects_on_first_read_and_stays_until_disconnect
         refute_predicate @device, :connected?
         @device.read(:a)

@@ -57,11 +57,12 @@ module SolarEdge
                 end
             end
 
-            # nil once written; raises Error otherwise.
+            # nil once written; raises Error otherwise. A string is
+            # padded with NULs to its register's length.
             def write(key, value)
                 reg = find(key)
-                values = Codec.encode(value, reg.dtype, wordorder(reg))
-                @transport.write_registers(@unit, reg.address, values)
+                @transport.write_registers(@unit, reg.address,
+                                           encode(key, reg, value))
                 nil
             end
 
@@ -71,6 +72,18 @@ module SolarEdge
                 registers.fetch(key) do
                     raise Error, "solaredge: unknown register #{key}"
                 end
+            end
+
+            # Never more registers than the register has: they would
+            # land on the next one.
+            def encode(key, reg, value)
+                words = Codec.encode(value, reg.dtype, wordorder(reg))
+                if words.size > reg.length
+                    raise Error, "solaredge: #{key} holds #{reg.length} " \
+                                 "registers, not #{words.size}"
+                end
+                return words unless reg.dtype == :string
+                words + ([0] * (reg.length - words.size))
             end
 
             def wordorder(reg)

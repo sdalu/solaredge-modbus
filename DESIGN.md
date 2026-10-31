@@ -82,4 +82,8 @@ only if its transaction id, protocol and unit match the request, its
 function and lengths agree with what was asked, and it is whole within
 the timeout, which runs from the request, not from each byte. Anything
 else raises and closes the connection, so whatever is left on the
-socket goes with it; the next request opens a new one.
+socket goes with it; the next request opens a new one. The device's
+exception reply is the one failure that keeps the connection: it is a
+whole, matching answer, and closing on it would have discovery
+reconnect for every meter or batch the inverter lacks, on a device
+that takes one client at a time.

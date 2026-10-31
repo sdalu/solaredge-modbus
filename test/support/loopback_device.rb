@@ -40,6 +40,17 @@ module LoopbackDevice
         server.close
     end
 
+    # A handler answering, on one connection, each request in turn with
+    # the next of `pdus`.
+    def answer_each(*pdus)
+        lambda do |conn, request|
+            pdus.each_with_index do |pdu, i|
+                request = conn.readpartial(1024) if i.positive?
+                conn.write(reply(request, pdu.b))
+            end
+        end
+    end
+
     # A handler answering each request with `pdu`.
     def answer(pdu, **)
         ->(conn, request) { conn.write(reply(request, pdu.b, **)) }

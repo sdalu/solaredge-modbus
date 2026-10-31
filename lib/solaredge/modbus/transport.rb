@@ -65,14 +65,17 @@ module SolarEdge
 
             private
 
-            # Sends one request and hands its reply to the block; any
-            # failure from the send on closes the connection.
+            # Sends one request and hands its reply to the block. Any
+            # failure from the send on closes the connection, except the
+            # device's exception reply: that is a whole, matching answer.
             def exchange(unit, pdu)
                 connect
                 @tid = (@tid + 1) & 0xffff
                 write_frame([@tid, 0, pdu.bytesize + 1, unit].pack("nnnC") +
                             pdu)
                 yield read_reply(@tid, unit)
+            rescue ModbusException
+                raise
             rescue Error
                 close
                 raise
