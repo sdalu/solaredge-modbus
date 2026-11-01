@@ -94,14 +94,28 @@ test runs on a register image in memory.
 
 ## A reply answers its request, or the connection goes
 
+A SolarEdge inverter keeps the late reply to a request that timed out
+and writes it into the next client's connection, whichever client that
+is. Measured on the house inverter on 2026-11-01: three times in 694
+requests, a request timed out and the next connection's first request
+got its reply. When the two transaction ids met (a fresh connection
+always started at 1, and the batches always go in the same order), the
+gem took a minute-old batch for current: energy_total went backwards.
+So each connection draws its first transaction id at random, anything
+readable before a request is discarded (nothing there can answer a
+request not yet sent), and a reply to another transaction is skipped
+rather than closing the connection, which would only cause another
+timeout and another leftover.
+
 One connection carries one request at a time, and a reply carries
 nothing that says which register it holds. So a reply that comes late
 would be read as the answer to the next request, and every value after
 it would be one request behind. The transport therefore takes a reply
 only if its transaction id, protocol and unit match the request, its
 function and lengths agree with what was asked, and it is whole within
-the timeout, which runs from the request, not from each byte. Anything
-else raises and closes the connection, so whatever is left on the
+the timeout, which runs from the request, not from each byte. A reply
+to another transaction is skipped, as above; anything else raises and
+closes the connection, so whatever is left on the
 socket goes with it; the next request opens a new one. The device's
 exception reply is the one failure that keeps the connection: it is a
 whole, matching answer, and closing on it would have discovery

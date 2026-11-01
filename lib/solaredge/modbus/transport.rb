@@ -17,20 +17,29 @@ module SolarEdge
         #
         # A reply is taken only if it answers the request just sent: its
         # transaction id, protocol (0) and unit must match, and it must
-        # arrive whole within `timeout` seconds of the request. Anything
-        # else closes the connection, so a reply that comes late is
-        # never read as the answer to the next request.
+        # arrive whole within `timeout` seconds of the request. A reply
+        # to another transaction is skipped; anything else closes the
+        # connection, so a reply that comes late is never read as the
+        # answer to the next request.
+        #
+        # A SolarEdge inverter hands a late reply to a timed-out request
+        # to whichever client connects next. So each connection starts
+        # its transaction ids at random, where a fixed start would let
+        # the leftover match, and anything already readable before a
+        # request is discarded: it cannot answer a request not yet sent.
         class Transport
             # MBAP length: the unit byte and a PDU of 1 to 253 bytes.
             LENGTHS = 2..254
 
-            def initialize(host, port, open_timeout: 3, timeout: 3)
+            # random: what draws each connection's first transaction id.
+            def initialize(host, port, open_timeout: 3, timeout: 3,
+                           random: Random.new)
                 @host = host
                 @port = port
                 @open_timeout = open_timeout
                 @timeout = timeout
+                @random = random
                 @socket = nil
-                @tid = 0
             end
 
             def connected? = !@socket.nil?
@@ -39,6 +48,7 @@ module SolarEdge
                 return if connected?
                 @socket = Socket.tcp(@host, @port,
                                      connect_timeout: @open_timeout)
+                @tid = @random.rand(0x10000)
             rescue SystemCallError, SocketError, IOError => e
                 raise Error, "solaredge: #{@host}:#{@port}: #{e.message}"
             end
@@ -71,16 +81,18 @@ module SolarEdge
             # device's exception reply: that is a whole, matching answer.
             def exchange(unit, pdu)
                 connect
-                @tid = (@tid + 1) & 0xffff
-                write_frame([@tid, 0, pdu.bytesize + 1, unit].pack("nnnC") +
-                            pdu)
-                yield read_reply(@tid, unit)
+                drain
+                tid = next_tid
+                write_frame([tid, 0, pdu.bytesize + 1, unit].pack("nnnC") + pdu)
+                yield read_reply(tid, unit)
             rescue ModbusException
                 raise
             rescue Error
                 close
                 raise
             end
+
+            def next_tid = @tid = (@tid + 1) & 0xffff
 
             def write_frame(frame)
                 @socket.write(frame)
@@ -90,9 +102,23 @@ module SolarEdge
 
             def read_reply(tid, unit)
                 deadline = now + @timeout
-                header = read_exact(7, deadline).unpack("nnnC")
-                Frame.check_header(header, tid, unit, LENGTHS)
-                read_exact(header[2] - 1, deadline)
+                loop do
+                    header = read_exact(7, deadline).unpack("nnnC")
+                    ours = Frame.ours?(header, tid, unit, LENGTHS)
+                    pdu = read_exact(header[2] - 1, deadline)
+                    return pdu if ours
+                end
+            end
+
+            # Discards whatever is readable before a request.
+            def drain
+                loop do
+                    chunk = @socket.read_nonblock(4096, exception: false)
+                    return if chunk == :wait_readable
+                    raise Error, "solaredge: connection closed" if chunk.nil?
+                end
+            rescue SystemCallError, IOError => e
+                raise Error, "solaredge: read: #{e.message}"
             end
 
             def read_exact(count, deadline)

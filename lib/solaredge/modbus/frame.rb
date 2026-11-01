@@ -21,13 +21,19 @@ module SolarEdge
                     .pack("Cnn C n#{values.size}")
             end
 
-            # header: [transaction id, protocol, length, unit].
-            def check_header(header, tid, unit, lengths)
-                raise Error, "solaredge: MBAP length #{header[2]}" unless
-                    lengths.cover?(header[2])
-                return if header in [^tid, 0, _, ^unit]
-                raise Error, "solaredge: reply #{header.values_at(0, 1, 3)
-                    .join("/")} to request #{tid}/0/#{unit}"
+            # header: [transaction id, protocol, length, unit]. true for
+            # the reply to request tid, false for a reply to another
+            # request (a late one, to be skipped); raises for a frame
+            # that is not a Modbus TCP reply to this unit.
+            def ours?(header, tid, unit, lengths)
+                r_tid, protocol, length, r_unit = header
+                raise Error, "solaredge: MBAP length #{length}" unless
+                    lengths.cover?(length)
+                raise Error, "solaredge: protocol #{protocol}" unless
+                    protocol.zero?
+                return false unless r_tid == tid
+                return true if r_unit == unit
+                raise Error, "solaredge: reply from unit #{r_unit} to #{unit}"
             end
 
             def registers(pdu, function, count)

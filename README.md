@@ -53,11 +53,16 @@ end
 - `read` tries three times, waiting 0.5 s then 1 s between tries
   (`retry_delays:` on `new`), and reconnecting as needed; then it
   raises `SolarEdge::Modbus::Error`. What is tried again: a refused or
-  lost connection, a reply that does not answer the request
-  (transaction, unit, function, lengths), one not whole within the
-  timeout (3 s from the request), and a device's exception reply other
-  than a refusal (busy, device failure). Each of those but the
-  exception reply closes the connection.
+  lost connection, a reply that does not answer the request (unit,
+  function, lengths), one not whole within the timeout (3 s from the
+  request), and a device's exception reply other than a refusal (busy,
+  device failure). Each of those but the exception reply closes the
+  connection.
+- A reply to another transaction is skipped, and anything already
+  waiting on the connection before a request is discarded: a SolarEdge
+  inverter hands the late reply to a timed-out request to the next
+  client that connects. Each connection starts its transaction ids at
+  random, so such a leftover cannot pass for a reply.
 - A refusal, the exception codes 1 to 3 (illegal function, data
   address, data value), is not tried again: it raises
   `SolarEdge::Modbus::ModbusException` (an `Error`, with `code`,

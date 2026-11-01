@@ -12,6 +12,11 @@ class SolarEdgeTransportTest < Minitest::Test
     Transport = SolarEdge::Modbus::Transport
     Error     = SolarEdge::Modbus::Error
 
+    # Draws 0, so the first request carries transaction id 1.
+    FIRST = Data.define do
+        def rand(_) = 0
+    end.new
+
     def test_reads_holding_registers
         request = serve([0x1234, 0x5678]) do |transport|
             transport.read_registers(:holding, 1, 0x10, 2)
@@ -55,7 +60,7 @@ class SolarEdgeTransportTest < Minitest::Test
         pdu = ([3, registers.size * 2] + registers).pack("CCn*")
         with_server do |server, port|
             thread = Thread.new { answer(server, pdu) }
-            transport = Transport.new("127.0.0.1", port)
+            transport = Transport.new("127.0.0.1", port, random: FIRST)
             @result = yield(transport)
             thread.value
         end
@@ -65,7 +70,7 @@ class SolarEdgeTransportTest < Minitest::Test
         pdu = [16, 0x20, 2].pack("Cnn")
         with_server do |server, port|
             thread = Thread.new { answer(server, pdu) }
-            transport = Transport.new("127.0.0.1", port)
+            transport = Transport.new("127.0.0.1", port, random: FIRST)
             @result = yield(transport)
             thread.value
         end
@@ -75,7 +80,7 @@ class SolarEdgeTransportTest < Minitest::Test
         pdu = [function | 0x80, code].pack("CC")
         with_server do |server, port|
             thread = Thread.new { answer(server, pdu) }
-            transport = Transport.new("127.0.0.1", port)
+            transport = Transport.new("127.0.0.1", port, random: FIRST)
             yield(transport)
             thread.value
         end

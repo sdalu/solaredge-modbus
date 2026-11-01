@@ -64,12 +64,6 @@ class SolarEdgeTransportReplyTest < Minitest::Test
         end
     end
 
-    def test_a_reply_to_another_transaction_is_refused
-        device(answer(read_pdu([7]), tid: 99)) do |transport|
-            assert_refused(transport, /reply 99/)
-        end
-    end
-
     def test_a_reply_without_byte_count_is_refused
         device(answer("\x03")) do |transport|
             assert_refused(transport, /bytes for/)
@@ -113,14 +107,99 @@ class SolarEdgeTransportReplyTest < Minitest::Test
             assert_raises(Error) { inverter.read(:status) }
         end
     end
+end
+
+# Replies that cross from one connection to the next, as a SolarEdge
+# inverter hands the late reply to a timed-out request to whichever
+# client connects next.
+class SolarEdgeTransportLeftoverTest < Minitest::Test
+    include LoopbackDevice
+
+    Transport = SolarEdge::Modbus::Transport
+
+    # Draws `value` as the first transaction id less one.
+    Draw = Data.define(:value) do
+        def rand(_) = value
+    end
+
+    # What a SolarEdge inverter does: a late reply to a request that
+    # timed out on another connection is written into the next one,
+    # here before that connection's first request, and with the very
+    # transaction id that request will carry. It must not be taken.
+    def test_a_leftover_waiting_before_the_request_is_discarded
+        with_server do |server, port|
+            transport = Transport.new("127.0.0.1", port, random: Draw.new(0))
+            written = Queue.new
+            thread = Thread.new { leftover_then_answer(server, written) }
+            transport.connect
+            written.pop
+            assert_equal [7], read_one(transport)
+            thread.join(2)
+        end
+    end
+
+    # A reply to another transaction is not ours: skipped, and ours
+    # still taken when it follows.
+    def test_a_reply_to_another_transaction_is_skipped
+        stale_then_ours = lambda do |conn, request|
+            conn.write(reply(request, read_pdu([0xdead]).b, tid: 99) +
+                       reply(request, read_pdu([7]).b))
+        end
+        device(stale_then_ours) do |transport|
+            assert_equal [7], read_one(transport)
+        end
+    end
+
+    def test_only_replies_to_other_transactions_time_out
+        foreign = lambda do |conn, request|
+            conn.write(reply(request, read_pdu([7]).b, tid: 99))
+            sleep 0.5
+        end
+        device(foreign) { |transport| assert_refused(transport, /timed out/) }
+    end
+
+    def test_each_connection_draws_its_first_transaction_id
+        assert_equal [42, 1000], first_tids(41, 999)
+    end
 
     private
 
-    def read_one(transport) = transport.read_registers(:holding, 1, 0, 1)
+    # Sends a reply for transaction 1 (the id the client's first request
+    # will carry) on accepting, signals, then answers the real request.
+    def leftover_then_answer(server, written)
+        conn = server.accept
+        conn.write([1, 0, 4 + 1, 1].pack("nnnC") + read_pdu([0xdead]))
+        sleep 0.05
+        written << true
+        request = conn.readpartial(1024)
+        conn.write(reply(request, read_pdu([7]).b))
+    ensure
+        conn&.close
+    end
 
-    def assert_refused(transport, message)
-        error = assert_raises(Error) { read_one(transport) }
-        assert_match(message, error.message)
-        refute_predicate transport, :connected?
+    # The transaction id of the first request of one connection per
+    # draw.
+    def first_tids(*draws)
+        seen = Queue.new
+        with_server do |server, port|
+            thread = Thread.new { serve_recording(server, draws.size, seen) }
+            draws.each { first_read(port, it) }
+            thread.join(2)
+        end
+        Array.new(draws.size) { seen.pop }
+    end
+
+    def serve_recording(server, count, seen)
+        record = lambda do |conn, request|
+            seen << request.unpack1("n")
+            conn.write(reply(request, read_pdu([7]).b))
+        end
+        count.times { handle(server.accept, record) }
+    end
+
+    def first_read(port, draw)
+        transport = Transport.new("127.0.0.1", port, random: Draw.new(draw))
+        transport.read_registers(:holding, 1, 0, 1)
+        transport.close
     end
 end

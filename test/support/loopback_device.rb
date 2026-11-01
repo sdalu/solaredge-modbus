@@ -40,6 +40,14 @@ module LoopbackDevice
         server.close
     end
 
+    def read_one(transport) = transport.read_registers(:holding, 1, 0, 1)
+
+    def assert_refused(transport, message)
+        error = assert_raises(SolarEdge::Modbus::Error) { read_one(transport) }
+        assert_match(message, error.message)
+        refute_predicate transport, :connected?
+    end
+
     # A handler answering, on one connection, each request in turn with
     # the next of `pdus`.
     def answer_each(*pdus)
